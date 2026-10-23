@@ -1,150 +1,142 @@
 import os
 import json
 import secrets
+import urllib.parse
 import requests
 from flask import Flask, redirect, request, session, url_for, render_template, jsonify
-from werkzeug.middleware.proxy_fix import ProxyFix
-import google_auth_oauthlib.flow
 from googleapiclient.discovery import build
 from google.oauth2.credentials import Credentials
 from google.auth.transport.requests import Request
 
-# OAuthLib environment settings (Proxy aur Scopes ke errors se bachne ke liye)
-os.environ['OAUTHLIB_INSECURE_TRANSPORT'] = '1'
-os.environ['OAUTHLIB_RELAX_TOKEN_SCOPE'] = '1'
-
 app = Flask(__name__)
-app.secret_key = "super_unique_secure_key_youtube_99"
+app.secret_key = "super_permanent_clean_key_9988"
 
-# Render reverse-proxy support (HTTPS detect karne ke liye)
-app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1, x_prefix=1)
-
-# Session cookie settings taaki redirect hone par state delete na ho
-app.config.update(
-    SESSION_COOKIE_SECURE=True,
-    SESSION_COOKIE_SAMESITE='Lax',
-    SESSION_COOKIE_HTTPONLY=True
-)
-
-# Firebase Realtime Database URL
+# Firebase Database URL
 FIREBASE_URL = "https://luckymall-23b3f-default-rtdb.firebaseio.com"
 
-# Render Live Callback URL
+# Render Redirect URL
 REDIRECT_URI = "https://no-fun-only-money.onrender.com/oauth2callback"
-CLIENT_SECRETS_FILE = "client_secret.json"
-SCOPES = ['https://www.googleapis.com/auth/youtube.force-ssl']
 
-# --- FIREBASE HELPERS ---
+# client_secret.json se client_id aur client_secret auto-load
+with open("client_secret.json") as f:
+    secret_data = json.load(f)
+cfg = secret_data.get("web") or secret_data.get("installed")
+CLIENT_ID = cfg["client_id"]
+CLIENT_SECRET = cfg["client_secret"]
+
+# Firebase Helpers
 def firebase_write(path, data):
     try:
         url = f"{FIREBASE_URL}/{path.lstrip('/')}.json"
-        requests.put(url, json=data, timeout=5)
+        requests.put(url, json=data, timeout=10)
     except Exception as e:
-        print(f"Firebase Write Error: {e}")
+        print("Firebase Write Error:", e)
 
 def firebase_read(path):
     try:
         url = f"{FIREBASE_URL}/{path.lstrip('/')}.json"
-        res = requests.get(url, timeout=5)
+        res = requests.get(url, timeout=10)
         return res.json() if res.status_code == 200 else None
     except Exception as e:
-        print(f"Firebase Read Error: {e}")
+        print("Firebase Read Error:", e)
         return None
 
-# --- WEB UI ROUTES ---
 @app.route('/')
 def index():
-    user_token = session.get('my_custom_token')
-    return render_template('index.html', token=user_token)
+    token = request.args.get('token') or session.get('my_custom_token')
+    return render_template('index.html', token=token)
 
 @app.route('/login')
 def login():
-    flow = google_auth_oauthlib.flow.Flow.from_client_secrets_file(
-        CLIENT_SECRETS_FILE, scopes=SCOPES)
-    flow.redirect_uri = REDIRECT_URI
-
-    auth_url, state = flow.authorization_url(
-        access_type='offline',
-        include_granted_scopes='true',
-        prompt='consent select_account'
-    )
-    session['state'] = state
-    return redirect(auth_url)
+    # Direct Google Authentication URL (No PKCE / No Verifier Loss)
+    params = {
+        'client_id': CLIENT_ID,
+        'redirect_uri': REDIRECT_URI,
+        'response_type': 'code',
+        'scope': 'https://www.googleapis.com/auth/youtube.force-ssl',
+        'access_type': 'offline',
+        'prompt': 'consent select_account'
+    }
+    google_auth_url = f"https://accounts.google.com/o/oauth2/v2/auth?{urllib.parse.urlencode(params)}"
+    return redirect(google_auth_url)
 
 @app.route('/oauth2callback')
 def oauth2callback():
-    try:
-        # Agar browser cookie drop bhi kar de, to Google ke response se state match karein
-        state = session.get('state') or request.args.get('state')
+    code = request.args.get('code')
+    if not code:
+        err = request.args.get('error', 'Google ne authorization cancel kar diya')
+        return f"<h3>Authentication Cancelled:</h3><p>{err}</p><a href='/login'>Dobara Login Karein</a>", 400
 
-        flow = google_auth_oauthlib.flow.Flow.from_client_secrets_file(
-            CLIENT_SECRETS_FILE, scopes=SCOPES, state=state)
-        flow.redirect_uri = REDIRECT_URI
+    # Direct Google Token API Request (No library bugs)
+    token_url = "https://oauth2.googleapis.com/token"
+    payload = {
+        'code': code,
+        'client_id': CLIENT_ID,
+        'client_secret': CLIENT_SECRET,
+        'redirect_uri': REDIRECT_URI,
+        'grant_type': 'authorization_code'
+    }
 
-        auth_resp = request.url
-        if auth_resp.startswith('http://'):
-            auth_resp = auth_resp.replace('http://', 'https://', 1)
+    resp = requests.post(token_url, data=payload, timeout=15)
+    token_data = resp.json()
 
-        flow.fetch_token(authorization_response=auth_resp)
-        creds = flow.credentials
+    if 'access_token' not in token_data:
+        return f"<h3>Token Exchange Failed:</h3><pre>{json.dumps(token_data, indent=2)}</pre><a href='/login'>Try Again</a>", 400
 
-        # Unique token generate karein
-        custom_token = secrets.token_hex(10)
+    # Permanent custom secret token
+    custom_token = secrets.token_hex(8)
 
-        user_data = {
-            'token': creds.token,
-            'refresh_token': getattr(creds, 'refresh_token', None),
-            'token_uri': creds.token_uri,
-            'client_id': creds.client_id,
-            'client_secret': creds.client_secret,
-            'scopes': creds.scopes
-        }
-        
-        # Firebase me store karein
-        firebase_write(f"youtube_tokens/{custom_token}", user_data)
-        session['my_custom_token'] = custom_token
+    save_payload = {
+        'token': token_data.get('access_token'),
+        'refresh_token': token_data.get('refresh_token'),
+        'token_uri': 'https://oauth2.googleapis.com/token',
+        'client_id': CLIENT_ID,
+        'client_secret': CLIENT_SECRET,
+        'scopes': ['https://www.googleapis.com/auth/youtube.force-ssl']
+    }
 
-        return redirect(url_for('index'))
+    # Firebase me credentials save karein
+    firebase_write(f"youtube_tokens/{custom_token}", save_payload)
+    session['my_custom_token'] = custom_token
 
-    except Exception as e:
-        # Agar koi bhi error aati hai to direct screen par show hogi, 500 error page nahi aayega
-        return f"<h3>Authentication Setup Issue:</h3><p>{str(e)}</p><a href='/login'>Try Again</a>", 400
+    # Token ko direct URL me pass karke index par bhej dein
+    return redirect(url_for('index', token=custom_token))
 
-# --- API ENDPOINT ---
 @app.route('/api', methods=['GET', 'POST'])
 def api_handler():
     token = request.args.get('token')
     action = request.args.get('action')
 
     if not token or not action:
-        return jsonify({'status': 'error', 'message': 'token aur action dono zaroori hain!'}), 400
+        return jsonify({'status': 'error', 'message': 'token aur action parameter zaroori hain!'}), 400
 
-    stored_creds = firebase_read(f"youtube_tokens/{token}")
-    if not stored_creds:
+    user_creds = firebase_read(f"youtube_tokens/{token}")
+    if not user_creds:
         return jsonify({'status': 'error', 'message': 'Token invalid hai ya database me nahi mila!'}), 404
 
     creds = Credentials(
-        token=stored_creds.get('token'),
-        refresh_token=stored_creds.get('refresh_token'),
-        token_uri=stored_creds.get('token_uri', 'https://oauth2.googleapis.com/token'),
-        client_id=stored_creds.get('client_id'),
-        client_secret=stored_creds.get('client_secret'),
-        scopes=stored_creds.get('scopes')
+        token=user_creds.get('token'),
+        refresh_token=user_creds.get('refresh_token'),
+        token_uri=user_creds.get('token_uri', 'https://oauth2.googleapis.com/token'),
+        client_id=user_creds.get('client_id'),
+        client_secret=user_creds.get('client_secret'),
+        scopes=user_creds.get('scopes')
     )
 
+    # Expire hone par auto refresh
     if creds.expired and creds.refresh_token:
         creds.refresh(Request())
-        stored_creds['token'] = creds.token
-        firebase_write(f"youtube_tokens/{token}", stored_creds)
+        user_creds['token'] = creds.token
+        firebase_write(f"youtube_tokens/{token}", user_creds)
 
     youtube = build('youtube', 'v3', credentials=creds)
 
     try:
-        # Subscribe Channel
+        # 1. Subscribe Channel
         if action == 'subscribe':
             channel_id = request.args.get('channel_id')
             if not channel_id:
-                return jsonify({'status': 'error', 'message': 'channel_id parameter missing!'}), 400
+                return jsonify({'status': 'error', 'message': 'channel_id parameter missing hai!'}), 400
 
             youtube.subscriptions().insert(
                 part="snippet",
@@ -157,18 +149,18 @@ def api_handler():
                     }
                 }
             ).execute()
-            return jsonify({'status': 'success', 'message': f'Channel {channel_id} successfully subscribed!'})
+            return jsonify({'status': 'success', 'message': f'Channel {channel_id} subscribe ho gaya!'})
 
-        # Like Video
+        # 2. Like Video
         elif action == 'like':
             video_id = request.args.get('video_id')
             if not video_id:
-                return jsonify({'status': 'error', 'message': 'video_id parameter missing!'}), 400
+                return jsonify({'status': 'error', 'message': 'video_id parameter missing hai!'}), 400
 
             youtube.videos().rate(id=video_id, rating='like').execute()
             return jsonify({'status': 'success', 'message': f'Video {video_id} liked!'})
 
-        # Search Query
+        # 3. Search Query
         elif action == 'search':
             query = request.args.get('q', '')
             res = youtube.search().list(part="snippet", q=query, maxResults=5).execute()
