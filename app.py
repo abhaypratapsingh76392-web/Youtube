@@ -1,30 +1,31 @@
 import os
+import re
 import json
 import secrets
 import urllib.parse
 import requests
-from flask import Flask, redirect, request, session, url_for, render_template, jsonify
+from flask import Flask, redirect, request, session, url_for, render_template, jsonify, Response
 from googleapiclient.discovery import build
 from google.oauth2.credentials import Credentials
 from google.auth.transport.requests import Request
 
 app = Flask(__name__)
-app.secret_key = "super_permanent_clean_key_9988"
+app.secret_key = "super_permanent_clean_key_9988_yt"
 
 # Firebase Database URL
 FIREBASE_URL = "https://luckymall-23b3f-default-rtdb.firebaseio.com"
 
-# Render Redirect URL
+# Render Redirect URI
 REDIRECT_URI = "https://no-fun-only-money.onrender.com/oauth2callback"
 
-# client_secret.json se client_id aur client_secret auto-load
+# client_secret.json auto-load
 with open("client_secret.json") as f:
     secret_data = json.load(f)
 cfg = secret_data.get("web") or secret_data.get("installed")
 CLIENT_ID = cfg["client_id"]
 CLIENT_SECRET = cfg["client_secret"]
 
-# Firebase Helpers
+# --- FIREBASE HELPERS ---
 def firebase_write(path, data):
     try:
         url = f"{FIREBASE_URL}/{path.lstrip('/')}.json"
@@ -41,14 +42,72 @@ def firebase_read(path):
         print("Firebase Read Error:", e)
         return None
 
+# --- YOUTUBE URL EXTRACTORS ---
+def extract_video_id(url_or_id):
+    if not url_or_id:
+        return None
+    url_or_id = url_or_id.strip()
+    if re.match(r'^[a-zA-Z0-9_-]{11}$', url_or_id):
+        return url_or_id
+    patterns = [
+        r'(?:v=|\/embed\/|\/watch\?v=|\/shorts\/|^youtu\.be\/|watch\?.*v=)([a-zA-Z0-9_-]{11})',
+        r'youtu\.be\/([a-zA-Z0-9_-]{11})',
+    ]
+    for p in patterns:
+        m = re.search(p, url_or_id)
+        if m:
+            return m.group(1)
+    return url_or_id
+
+def resolve_channel_id(youtube, url_or_id):
+    if not url_or_id:
+        return None
+    url_or_id = url_or_id.strip()
+    # Direct UC... ID (24 characters)
+    if url_or_id.startswith('UC') and len(url_or_id) == 24:
+        return url_or_id
+
+    # Handle jaise @channelName
+    handle_match = re.search(r'(@[a-zA-Z0-9_.-]+)', url_or_id)
+    if handle_match:
+        try:
+            res = youtube.channels().list(part="id", forHandle=handle_match.group(1)).execute()
+            items = res.get('items', [])
+            if items:
+                return items[0]['id']
+        except Exception:
+            pass
+
+    # /channel/UC... link
+    ch_match = re.search(r'/channel/(UC[a-zA-Z0-9_-]{22})', url_or_id)
+    if ch_match:
+        return ch_match.group(1)
+
+    # Search ke through channel ID nikalna
+    clean_query = url_or_id.replace('https://', '').replace('http://', '').replace('www.youtube.com/', '').replace('/', '')
+    try:
+        res = youtube.search().list(part="id", type="channel", q=clean_query, maxResults=1).execute()
+        items = res.get('items', [])
+        if items:
+            return items[0]['id']['channelId']
+    except Exception:
+        pass
+
+    return url_or_id
+
+# --- ROUTES ---
 @app.route('/')
 def index():
     token = request.args.get('token') or session.get('my_custom_token')
-    return render_template('index.html', token=token)
+    user_info = None
+    if token:
+        user_data = firebase_read(f"youtube_tokens/{token}")
+        if user_data:
+            user_info = user_data.get('user_info', {})
+    return render_template('index.html', token=token, user=user_info)
 
 @app.route('/login')
 def login():
-    # Direct Google Authentication URL (No PKCE / No Verifier Loss)
     params = {
         'client_id': CLIENT_ID,
         'redirect_uri': REDIRECT_URI,
@@ -64,10 +123,8 @@ def login():
 def oauth2callback():
     code = request.args.get('code')
     if not code:
-        err = request.args.get('error', 'Google ne authorization cancel kar diya')
-        return f"<h3>Authentication Cancelled:</h3><p>{err}</p><a href='/login'>Dobara Login Karein</a>", 400
+        return redirect(url_for('index'))
 
-    # Direct Google Token API Request (No library bugs)
     token_url = "https://oauth2.googleapis.com/token"
     payload = {
         'code': code,
@@ -81,10 +138,30 @@ def oauth2callback():
     token_data = resp.json()
 
     if 'access_token' not in token_data:
-        return f"<h3>Token Exchange Failed:</h3><pre>{json.dumps(token_data, indent=2)}</pre><a href='/login'>Try Again</a>", 400
+        return f"<h3>Authentication Error:</h3><pre>{json.dumps(token_data)}</pre><a href='/login'>Try Again</a>", 400
 
-    # Permanent custom secret token
     custom_token = secrets.token_hex(8)
+
+    # User ka YouTube Profile/Channel Info fetch karein
+    creds = Credentials(
+        token=token_data.get('access_token'),
+        refresh_token=token_data.get('refresh_token'),
+        token_uri='https://oauth2.googleapis.com/token',
+        client_id=CLIENT_ID,
+        client_secret=CLIENT_SECRET,
+        scopes=['https://www.googleapis.com/auth/youtube.force-ssl']
+    )
+    youtube = build('youtube', 'v3', credentials=creds)
+
+    user_info = {'title': 'Connected User', 'picture': ''}
+    try:
+        ch_resp = youtube.channels().list(part="snippet", mine=True).execute()
+        if ch_resp.get('items'):
+            snippet = ch_resp['items'][0]['snippet']
+            user_info['title'] = snippet.get('title', 'YouTube User')
+            user_info['picture'] = snippet.get('thumbnails', {}).get('default', {}).get('url', '')
+    except Exception:
+        pass
 
     save_payload = {
         'token': token_data.get('access_token'),
@@ -92,16 +169,98 @@ def oauth2callback():
         'token_uri': 'https://oauth2.googleapis.com/token',
         'client_id': CLIENT_ID,
         'client_secret': CLIENT_SECRET,
-        'scopes': ['https://www.googleapis.com/auth/youtube.force-ssl']
+        'scopes': ['https://www.googleapis.com/auth/youtube.force-ssl'],
+        'user_info': user_info
     }
 
-    # Firebase me credentials save karein
     firebase_write(f"youtube_tokens/{custom_token}", save_payload)
     session['my_custom_token'] = custom_token
 
-    # Token ko direct URL me pass karke index par bhej dein
     return redirect(url_for('index', token=custom_token))
 
+@app.route('/logout')
+def logout():
+    session.clear()
+    return redirect(url_for('index'))
+
+# --- DOWNLOAD SETUP TXT ROUTE ---
+@app.route('/download-setup')
+def download_setup():
+    token = request.args.get('token')
+    if not token:
+        return "Token parameter missing", 400
+
+    base_url = "https://no-fun-only-money.onrender.com/api"
+
+    content = f"""==================================================================
+              YOUTUBE BOT & API AUTOMATION SETUP GUIDE
+==================================================================
+
+Aapka Permanent Token: {token}
+Base Server API URL: {base_url}
+
+------------------------------------------------------------------
+1. KISI CHANNEL KO SUBSCRIBE KARNE KA SYSTEM:
+------------------------------------------------------------------
+Aap direct YouTube Channel ka koi bhi URL/Link daal sakte hain!
+
+URL Format:
+{base_url}?token={token}&action=subscribe&channel_url=[CHANNEL_URL]
+
+Ready Example:
+{base_url}?token={token}&action=subscribe&channel_url=https://www.youtube.com/@MrBeast
+
+Kaise use karein aur kahan kya replace karein:
+1. Upar wale link me "[CHANNEL_URL]" ki jagah jis channel ko subscribe karwana hai uska link paste karein (Example: https://youtube.com/@TSeries).
+2. Is pura URL ko kisi bhi phone browser, Chrome me enter karein ya background me hit karein.
+3. Channel instantly aapke account se subscribe ho jayega!
+
+------------------------------------------------------------------
+2. KISI VIDEO KO LIKE KARNE KA SYSTEM:
+------------------------------------------------------------------
+Aap direct YouTube Video ka link daal sakte hain!
+
+URL Format:
+{base_url}?token={token}&action=like&video_url=[VIDEO_URL]
+
+Ready Example:
+{base_url}?token={token}&action=like&video_url=https://www.youtube.com/watch?v=dQw4w9WgXcQ
+
+Kaise use karein:
+1. "[VIDEO_URL]" ki jagah target YouTube video ka link dalein.
+2. Link ko hit ya open karte hi video automatically like ho jayegi.
+
+------------------------------------------------------------------
+3. YOUTUBE SEARCH KARNE KA SYSTEM:
+------------------------------------------------------------------
+URL Format:
+{base_url}?token={token}&action=search&q=[SEARCH_KEYWORD]
+
+Ready Example:
+{base_url}?token={token}&action=search&q=tech+gadgets
+
+------------------------------------------------------------------
+4. APNE PYTHON / PHP YA WEBSITE ME CODE SE KAISE CHALAYEIN:
+------------------------------------------------------------------
+[Python Code Example]
+import requests
+url = "{base_url}?token={token}&action=subscribe&channel_url=https://www.youtube.com/@MrBeast"
+response = requests.get(url)
+print(response.json())
+
+[HTML / Redirect Button Example]
+<a href="{base_url}?token={token}&action=subscribe&channel_url=https://www.youtube.com/@MrBeast">
+   Subscribe MrBeast
+</a>
+==================================================================
+"""
+    return Response(
+        content,
+        mimetype="text/plain",
+        headers={"Content-Disposition": f"attachment;filename=setup_instructions_{token[:6]}.txt"}
+    )
+
+# --- DIRECT URL API HANDLER ---
 @app.route('/api', methods=['GET', 'POST'])
 def api_handler():
     token = request.args.get('token')
@@ -123,7 +282,6 @@ def api_handler():
         scopes=user_creds.get('scopes')
     )
 
-    # Expire hone par auto refresh
     if creds.expired and creds.refresh_token:
         creds.refresh(Request())
         user_creds['token'] = creds.token
@@ -132,11 +290,15 @@ def api_handler():
     youtube = build('youtube', 'v3', credentials=creds)
 
     try:
-        # 1. Subscribe Channel
+        # Subscribe Action (Direct URL ya Channel ID dono support karta hai)
         if action == 'subscribe':
-            channel_id = request.args.get('channel_id')
-            if not channel_id:
-                return jsonify({'status': 'error', 'message': 'channel_id parameter missing hai!'}), 400
+            channel_input = request.args.get('channel_url') or request.args.get('channel_id')
+            if not channel_input:
+                return jsonify({'status': 'error', 'message': 'channel_url ya channel_id zaroori hai!'}), 400
+
+            target_channel_id = resolve_channel_id(youtube, channel_input)
+            if not target_channel_id:
+                return jsonify({'status': 'error', 'message': 'Channel ID resolve nahi ho payi!'}), 400
 
             youtube.subscriptions().insert(
                 part="snippet",
@@ -144,27 +306,28 @@ def api_handler():
                     'snippet': {
                         'resourceId': {
                             'kind': 'youtube#channel',
-                            'channelId': channel_id
+                            'channelId': target_channel_id
                         }
                     }
                 }
             ).execute()
-            return jsonify({'status': 'success', 'message': f'Channel {channel_id} subscribe ho gaya!'})
+            return jsonify({'status': 'success', 'message': f'Channel ({channel_input}) subscribe ho gaya!', 'channel_id': target_channel_id})
 
-        # 2. Like Video
+        # Like Action (Direct Video Link ya Video ID dono support karta hai)
         elif action == 'like':
-            video_id = request.args.get('video_id')
-            if not video_id:
-                return jsonify({'status': 'error', 'message': 'video_id parameter missing hai!'}), 400
+            video_input = request.args.get('video_url') or request.args.get('video_id')
+            if not video_input:
+                return jsonify({'status': 'error', 'message': 'video_url ya video_id parameter zaroori hai!'}), 400
 
-            youtube.videos().rate(id=video_id, rating='like').execute()
-            return jsonify({'status': 'success', 'message': f'Video {video_id} liked!'})
+            target_video_id = extract_video_id(video_input)
+            youtube.videos().rate(id=target_video_id, rating='like').execute()
+            return jsonify({'status': 'success', 'message': f'Video ({video_input}) like ho gayi!', 'video_id': target_video_id})
 
-        # 3. Search Query
+        # Search Action
         elif action == 'search':
             query = request.args.get('q', '')
             res = youtube.search().list(part="snippet", q=query, maxResults=5).execute()
-            items = [{'title': item['snippet']['title'], 'channelId': item['snippet']['channelId']} for item in res.get('items', [])]
+            items = [{'title': item['snippet']['title'], 'channelTitle': item['snippet']['channelTitle'], 'videoId': item['id'].get('videoId')} for item in res.get('items', [])]
             return jsonify({'status': 'success', 'results': items})
 
         else:
