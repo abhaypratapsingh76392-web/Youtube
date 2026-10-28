@@ -114,7 +114,6 @@ def oauth2callback():
             user_info['picture'] = ch_resp['items'][0]['snippet'].get('thumbnails', {}).get('default', {}).get('url', '')
     except Exception: pass
 
-    # Token Persistence Fix
     existing_token = None
     all_tokens = firebase_read("youtube_tokens") or {}
     for t_key, t_val in all_tokens.items():
@@ -178,12 +177,12 @@ NOTE: Ye API URL sirf aapke token ke sath kaam karega.
 @app.route('/download-app')
 def download_app():
     token = request.args.get('token', '')
-    # Ek basic vidmate jaisi website ka HTML code
-    html_content = f"""
+    # ✅ FIX: f-string hatakar normal string use ki hai, aur token ko replace kiya hai
+    html_template = """
     <!DOCTYPE html>
     <html>
     <head><title>My VidMate</title>
-    <style>body{{background:#111;color:#fff;font-family:sans-serif;padding:20px;}} .grid{{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:15px;}}</style>
+    <style>body{background:#111;color:#fff;font-family:sans-serif;padding:20px;} .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:15px;}</style>
     </head>
     <body>
         <h1>My Vidmate Clone</h1>
@@ -191,32 +190,34 @@ def download_app():
         <button onclick="search()">Search</button>
         <div id="results" class="grid" style="margin-top:20px;"></div>
         <script>
-            const TOKEN = "{token}";
-            function search() {{
+            const TOKEN = "TOKEN_PLACEHOLDER";
+            function search() {
                 let q = document.getElementById('q').value;
-                fetch(`https://no-fun-only-money.onrender.com/api?token=${{TOKEN}}&action=search&q=${{q}}`)
+                fetch(`https://no-fun-only-money.onrender.com/api?token=${TOKEN}&action=search&q=${q}`)
                 .then(res => res.json())
-                .then(data => {{
+                .then(data => {
                     let html = '';
-                    data.results.forEach(v => {{
+                    data.results.forEach(v => {
                         html += `<div>
-                            <a href="https://youtube.com/watch?v=${{v.videoId}}" target="_blank">
-                                <img src="${{v.thumbnail}}" style="width:100%;border-radius:8px;">
-                                <p style="font-size:14px;margin-top:5px;">${{v.title}}</p>
+                            <a href="https://youtube.com/watch?v=${v.videoId}" target="_blank">
+                                <img src="${v.thumbnail}" style="width:100%;border-radius:8px;">
+                                <p style="font-size:14px;margin-top:5px;">${v.title}</p>
                             </a>
                         </div>`;
-                    }});
+                    });
                     document.getElementById('results').innerHTML = html;
-                }});
-            }}
+                });
+            }
         </script>
     </body>
     </html>
     """
+    html_content = html_template.replace("TOKEN_PLACEHOLDER", token)
+    
     # Create zip in memory
     memory_file = io.BytesIO()
     with zipfile.ZipFile(memory_file, 'w') as zf:
-        zf.writestr(f"index.html", html_content)
+        zf.writestr("index.html", html_content)
         zf.writestr("README.txt", "Apna token embed kar diya gaya hai. Direct index.html open karein.")
     memory_file.seek(0)
     return send_file(memory_file, download_name=f"vidmate_app_{token}.zip", as_attachment=True)
