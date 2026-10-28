@@ -136,18 +136,19 @@ def logout():
 @app.route('/download-guide')
 def download_guide():
     token = request.args.get('token', 'YOUR_TOKEN')
-    guide_text = f"""
+    # ✅ FIX: f-string hatakar normal string use ki hai
+    guide_template = """
 =====================================================
         YOUTUBE AUTOMATION API - USER GUIDE
 =====================================================
-Aapka API Token: {token}
+Aapka API Token: TOKEN_PLACEHOLDER
 
 Is token ka use karke aap apni khud ki Vidmate jaisi website bana sakte hain.
 
 -----------------------------------------------------
 1. VIDEO SEARCH KARNA (API CALL)
 -----------------------------------------------------
-URL: https://no-fun-only-money.onrender.com/api?token={token}&action=search&q=trending
+URL: https://no-fun-only-money.onrender.com/api?token=TOKEN_PLACEHOLDER&action=search&q=trending
 
 Response: Ye aapko JSON format me videos ki list dega.
 
@@ -163,7 +164,7 @@ Aap search se mila 'videoId' le kar sidha YouTube embed iframe use kar sakte hai
 -----------------------------------------------------
 Aap apne HTML/Javascript code me fetch() ke zariye data laa sakte hain:
 
-fetch('https://no-fun-only-money.onrender.com/api?token={token}&action=search&q=latest+songs')
+fetch('https://no-fun-only-money.onrender.com/api?token=TOKEN_PLACEHOLDER&action=search&q=latest+songs')
   .then(res => res.json())
   .then(data => {
       // Yahan aap videos ko screen par dikha sakte hain
@@ -172,6 +173,7 @@ fetch('https://no-fun-only-money.onrender.com/api?token={token}&action=search&q=
 
 NOTE: Ye API URL sirf aapke token ke sath kaam karega.
 """
+    guide_text = guide_template.replace("TOKEN_PLACEHOLDER", token)
     return Response(guide_text, mimetype="text/plain", headers={"Content-Disposition": f"attachment;filename=guide_{token}.txt"})
 
 @app.route('/download-app')
