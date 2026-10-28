@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>YouTube API Dashboard</title>
+    <title>YouTube API Dashboard - Pro Version</title>
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; }
         body { font-family: -apple-system, sans-serif; background: #0b0f19; color: #f1f5f9; display: flex; min-height: 100vh; }
@@ -22,7 +22,9 @@
         .main-content { margin-left: 250px; flex: 1; padding: 30px; }
         
         .player-section { display: none; margin-bottom: 25px; background: #000; border-radius: 12px; overflow: hidden; border: 1px solid #334155; position: sticky; top: 20px; z-index: 50; box-shadow: 0 10px 30px rgba(0,0,0,0.5); }
-        .player-section iframe { width: 100%; height: 450px; border: none; }
+        .player-section iframe, .player-section video { width: 100%; height: 450px; border: none; background: #000; outline: none; }
+        .player-loader { text-align: center; padding: 150px 20px; color: #3b82f6; font-weight: bold; font-size: 18px; display: none; }
+        
         .player-actions { background: #0f172a; padding: 12px; display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; }
         
         .btn { padding: 10px 18px; border-radius: 8px; font-weight: bold; text-decoration: none; font-size: 13px; display: inline-flex; align-items: center; gap: 8px; border: none; cursor: pointer; color: #fff; }
@@ -68,26 +70,31 @@
         <a onclick="switchTab('home')" class="menu-item active" id="nav-home">🏠 Home (Videos)</a>
         <a onclick="switchTab('subs')" class="menu-item" id="nav-subs">📺 Subscriptions</a>
         
-        <a href="/download-guide?token={{ token }}" class="menu-item" style="margin-top:20px;">📄 API User Guide (Info Only)</a>
+        <a href="/download-guide?token={{ token }}" class="menu-item" style="margin-top:20px;">📄 API User Guide</a>
         <a href="/logout" class="btn-logout">Logout</a>
     </div>
 
     <div class="main-content">
         
-        <!-- Player Section with Interactions (Like, Sub, etc.) -->
+        <!-- Player Section with Native Video (No YouTube Logo) -->
         <div class="player-section" id="playerSection">
             <div style="padding: 10px; background: #1e293b; display: flex; justify-content: space-between; color: #fff; align-items:center;">
                 <span id="nowPlaying" style="font-size: 15px; font-weight: bold; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; padding-right: 15px;">Playing...</span>
                 <button onclick="closePlayer()" style="background: #ef4444; color: #fff; border: none; padding: 6px 12px; border-radius: 5px; cursor: pointer; font-weight:bold;">X Close</button>
             </div>
-            <iframe id="videoFrame" src="" allow="autoplay; encrypted-media" allowfullscreen></iframe>
+            
+            <!-- Vidmate Jaisa Native Player -->
+            <div class="player-loader" id="playerLoader">⏳ Fetching Raw Stream (Bypassing YouTube)...</div>
+            <video id="nativeVideo" controls autoplay style="display:none;"></video>
+            <!-- Fallback ke liye Iframe agar raw stream block ho -->
+            <iframe id="videoFrame" src="" allow="autoplay; encrypted-media" allowfullscreen style="display:none;"></iframe>
             
             <div class="player-actions">
                 <button class="btn btn-like" onclick="doAction('like')">👍 Like</button>
                 <button class="btn btn-dislike" onclick="doAction('dislike')">👎 Dislike</button>
                 <button class="btn btn-sub" onclick="doAction('subscribe')">🔔 Subscribe Channel</button>
                 <button class="btn btn-share" onclick="shareVideo()">↪️ Share</button>
-                <button class="btn btn-down" onclick="downloadVideo()">⬇️ Download</button>
+                <button class="btn btn-down" id="downloadBtn" onclick="downloadVideo()">⬇️ Download</button>
                 <button class="btn" style="background:#475569;" onclick="visitChannel()">🏢 Visit Channel</button>
             </div>
         </div>
@@ -245,7 +252,6 @@
         // ---------- SCROLL LISTENER ---------- //
         function setupInfiniteScroll() {
             window.addEventListener('scroll', () => {
-                // Check if user is near bottom
                 if ((window.innerHeight + window.scrollY) >= document.body.offsetHeight - 200) {
                     if(currentTab === 'home' && nextVideoPage) {
                         searchVideos();
@@ -263,23 +269,64 @@
             
             const playerSection = document.getElementById('playerSection');
             const iframe = document.getElementById('videoFrame');
+            const nativeVideo = document.getElementById('nativeVideo');
+            const loader = document.getElementById('playerLoader');
             const nowPlaying = document.getElementById('nowPlaying');
+            const dlBtn = document.getElementById('downloadBtn');
             
-            iframe.src = `https://www.youtube.com/embed/${videoId}?autoplay=1`;
+            dlBtn.innerText = "⬇️ Download";
             nowPlaying.innerText = title;
             playerSection.style.display = 'block';
             
+            // Sabse pehle loader dikhayein, YouTube ka logo hataane ke liye native player setup karein
+            iframe.style.display = 'none';
+            nativeVideo.style.display = 'none';
+            nativeVideo.src = "";
+            loader.style.display = 'block';
+            window.currentDownloadUrl = null;
+            
+            // Piped Public API backend route se raw MP4 fetch karein
+            fetch(`${API_BASE}?token=${TOKEN}&action=get_stream&video_id=${videoId}`)
+            .then(res => res.json())
+            .then(data => {
+                loader.style.display = 'none';
+                if(data.status === 'success' && data.stream_url) {
+                    // Yahan YouTube ka koi UI/Logo nahi aayega (Vidmate style)
+                    nativeVideo.src = data.stream_url;
+                    nativeVideo.style.display = 'block';
+                    nativeVideo.play();
+                    window.currentDownloadUrl = data.stream_url; // Direct download ke liye
+                } else {
+                    fallbackToIframe(videoId);
+                }
+            })
+            .catch(err => {
+                loader.style.display = 'none';
+                fallbackToIframe(videoId);
+            });
+            
             playerSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }
+
+        function fallbackToIframe(videoId) {
+            const iframe = document.getElementById('videoFrame');
+            const nativeVideo = document.getElementById('nativeVideo');
+            nativeVideo.style.display = 'none';
+            iframe.style.display = 'block';
+            // modestbranding se logo chiphta hai but full remove nahi hota, isiliye ye fallback hai
+            iframe.src = `https://www.youtube.com/embed/${videoId}?autoplay=1&modestbranding=1&rel=0&iv_load_policy=3`;
+            window.currentDownloadUrl = null;
         }
 
         function closePlayer() {
             const playerSection = document.getElementById('playerSection');
             const iframe = document.getElementById('videoFrame');
+            const nativeVideo = document.getElementById('nativeVideo');
             iframe.src = "";
+            nativeVideo.src = "";
             playerSection.style.display = 'none';
         }
 
-        // Private api request, buttons click par hoga website ke andar
         function doAction(action) {
             if(!currentVideoId && action !== 'subscribe') return;
             
@@ -308,7 +355,7 @@
             .then(res => res.json())
             .then(data => {
                 alert(data.message);
-                loadSubscriptions(true); // reload from start
+                loadSubscriptions(true); // reload
             });
         }
 
@@ -323,18 +370,45 @@
             window.open(`https://youtube.com/channel/${currentChannelId}`, "_blank");
         }
 
-        // Live download to browser phone (Using 3rd party since YT API doesn't allow direct mp4)
+        // Direct Download & API Download System
         function downloadVideo() {
             if(!currentVideoId) return;
-            // ssyoutube or y2mate redirect approach is best for browser direct load
-            const downloadUrl = `https://ssyoutube.com/watch?v=${currentVideoId}`;
-            window.open(downloadUrl, "_blank"); 
+            const btn = document.getElementById('downloadBtn');
+            btn.innerText = "⏳ Fetching...";
+            
+            if (window.currentDownloadUrl) {
+                // Raw link already fetched (Direct Download - Fast)
+                let a = document.createElement('a');
+                a.href = window.currentDownloadUrl;
+                a.target = "_blank";
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                btn.innerText = "⬇️ Download";
+            } else {
+                // Agar native stream fail ho gaya tha, toh Public Backend route par hit karo
+                fetch(`${API_BASE}?token=${TOKEN}&action=get_stream&video_id=${currentVideoId}`)
+                .then(res => res.json())
+                .then(data => {
+                    if(data.status === 'success' && data.stream_url) {
+                        window.open(data.stream_url, "_blank");
+                    } else {
+                        // Agar Piped API kaam na kare toh last option y2mate style redirect
+                        window.open(`https://yt1s.com/en/youtube-to-mp4?q=https://youtube.com/watch?v=${currentVideoId}`, "_blank");
+                    }
+                    btn.innerText = "⬇️ Download";
+                })
+                .catch(err => {
+                    window.open(`https://yt1s.com/en/youtube-to-mp4?q=https://youtube.com/watch?v=${currentVideoId}`, "_blank");
+                    btn.innerText = "⬇️ Download";
+                });
+            }
         }
     </script>
     {% else %}
     <div style="width: 100%; display: flex; justify-content: center; align-items: center;">
         <div style="background: #1e293b; padding: 40px; border-radius: 16px; text-align: center; border: 1px solid #334155; max-width: 400px;">
-            <h1 style="color: #38bdf8; margin-bottom: 10px;">YouTube App Fix</h1>
+            <h1 style="color: #38bdf8; margin-bottom: 10px;">YouTube App Pro</h1>
             <p style="color: #94a3b8; margin-bottom: 20px;">Apna Google account connect karein.</p>
             <a href="/login" style="background: #2563eb; color: #fff; padding: 12px 25px; border-radius: 8px; text-decoration: none; font-weight: bold; display: inline-block;">Login with Google</a>
         </div>
