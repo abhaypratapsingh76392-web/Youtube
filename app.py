@@ -13,7 +13,7 @@ from google.oauth2.credentials import Credentials
 from google.auth.transport.requests import Request
 
 app = Flask(__name__)
-CORS(app)  # FIX: Cross-origin (CORS) problem fix kar diya gaya hai
+CORS(app) 
 app.secret_key = os.environ.get("FLASK_SECRET_KEY", "super_permanent_clean_key_9988_yt")
 ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "abhay12345")
 FIREBASE_URL = "https://luckymall-23b3f-default-rtdb.firebaseio.com"
@@ -142,60 +142,71 @@ def logout():
 @app.route('/download-guide')
 def download_guide():
     token = request.args.get('token', 'YOUR_TOKEN')
+    # FIX: Guide update kiya jisme user keval load aur play kar sakta hai uske details, API info add kiya, private actions removed
     guide_template = """
 =====================================================
-        YOUTUBE AUTOMATION API - USER GUIDE
+        YOUTUBE APP / AUTOMATION - USER GUIDE
 =====================================================
-Aapka API Token: TOKEN_PLACEHOLDER
-Is token ka use karke aap apni khud ki Vidmate jaisi website bana sakte hain.
+Aapka User API Token: TOKEN_PLACEHOLDER
+
+Ye guide aapko batayegi ki aap is API se apna frontend/app kaise bana sakte hain.
+Aap isse YouTube videos load, unhe play aur apne subscribed channels check kar sakte hain.
+
+-----------------------------------------------------
+1. VIDEO SEARCH & INFINITE LOAD KAISE KAREIN?
+-----------------------------------------------------
+URL ENDPOINT:
+https://no-fun-only-money.onrender.com/api?token=TOKEN_PLACEHOLDER&action=search&q=YOUR_SEARCH_QUERY&pageToken=NEXT_PAGE_TOKEN
+
+- q: Aap kya search karna chahte hain (e.g. trending india, latest songs).
+- pageToken: (Optional) Infinite scrolling ke liye. API response me 'nextPageToken' aayega, usko agli request me bhej kar aur aage ke videos la sakte hain (unlimited scrolling).
+
+JAVASCRIPT EXAMPLE (Fetch):
+fetch('https://no-fun-only-money.onrender.com/api?token=TOKEN_PLACEHOLDER&action=search&q=latest+movies')
+  .then(res => res.json())
+  .then(data => {
+      console.log("Videos List:", data.results);
+      // Agar 'data.nextPageToken' ho toh usse agli baar bhejein aur videos ke liye.
+  });
+
+-----------------------------------------------------
+2. VIDEOS KO WEBSITE / APP ME PLAY KAISE KAREIN?
+-----------------------------------------------------
+Aap search se mile 'videoId' ko directly iframe me lagakar play kar sakte hain:
+HTML Code:
+<iframe width="100%" height="400" src="https://www.youtube.com/embed/VIDEO_ID" frameborder="0" allowfullscreen></iframe>
+
+-----------------------------------------------------
+3. APNE SUBSCRIBED CHANNELS KAISE CHECK KAREIN?
+-----------------------------------------------------
+URL ENDPOINT:
+https://no-fun-only-money.onrender.com/api?token=TOKEN_PLACEHOLDER&action=subscriptions
+
+Ye API un channels ki list degi jinko aapne subscribe kiya hua hai. Isse aap apne app me 'Subscriptions' tab bana sakte hain.
+
+JAVASCRIPT EXAMPLE:
+fetch('https://no-fun-only-money.onrender.com/api?token=TOKEN_PLACEHOLDER&action=subscriptions')
+  .then(res => res.json())
+  .then(data => {
+      console.log("Subscribed Channels:", data.results);
+  });
+
+-----------------------------------------------------
+4. CHANNELS KO VISIT KAISE KAREIN?
+-----------------------------------------------------
+API response (Search ya Subscriptions) se mile 'channelId' ka use karke aap channel ka YouTube page khol sakte hain.
+URL format: https://www.youtube.com/channel/CHANNEL_ID
+
+-----------------------------------------------------
+5. VIDEO DOWNLOAD KARNA
+-----------------------------------------------------
+YouTube API directly MP4 download nahi deti. Lekin aap apni website me 'videoId' ke aadhar par kisi 3rd party downloader (jaise y2mate ya ssyoutube links) ka button de sakte hain jisse user ke phone me direct load ya browser me download shuru ho jaye.
+
+NOTE: API actions jaise auto Like, auto Subscribe, aur Dislike karne ke URLs sirf Admin control panel me private hote hain. App user video play karte time GUI button click karke action le sakte hain jo directly aapke app (index.html) ke through call honge.
+=====================================================
 """
     guide_text = guide_template.replace("TOKEN_PLACEHOLDER", token)
-    return Response(guide_text, mimetype="text/plain", headers={"Content-Disposition": f"attachment;filename=guide_{token}.txt"})
-
-@app.route('/download-app')
-def download_app():
-    token = request.args.get('token', '')
-    html_template = """
-    <!DOCTYPE html>
-    <html>
-    <head><title>My VidMate</title>
-    <style>body{background:#111;color:#fff;font-family:sans-serif;padding:20px;} .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:15px;}</style>
-    </head>
-    <body>
-        <h1>My Vidmate Clone</h1>
-        <input type="text" id="q" placeholder="Search videos...">
-        <button onclick="search()">Search</button>
-        <div id="results" class="grid" style="margin-top:20px;"></div>
-        <script>
-            const TOKEN = "TOKEN_PLACEHOLDER";
-            function search() {
-                let q = document.getElementById('q').value;
-                fetch(`https://no-fun-only-money.onrender.com/api?token=${TOKEN}&action=search&q=${q}`)
-                .then(res => res.json())
-                .then(data => {
-                    let html = '';
-                    data.results.forEach(v => {
-                        html += `<div>
-                            <a href="https://youtube.com/watch?v=${v.videoId}" target="_blank">
-                                <img src="${v.thumbnail}" style="width:100%;border-radius:8px;">
-                                <p style="font-size:14px;margin-top:5px;">${v.title}</p>
-                            </a>
-                        </div>`;
-                    });
-                    document.getElementById('results').innerHTML = html;
-                });
-            }
-        </script>
-    </body>
-    </html>
-    """
-    html_content = html_template.replace("TOKEN_PLACEHOLDER", token)
-    memory_file = io.BytesIO()
-    with zipfile.ZipFile(memory_file, 'w') as zf:
-        zf.writestr("index.html", html_content)
-        zf.writestr("README.txt", "Apna token embed kar diya gaya hai. Direct index.html open karein.")
-    memory_file.seek(0)
-    return send_file(memory_file, download_name=f"vidmate_app_{token}.zip", as_attachment=True)
+    return Response(guide_text, mimetype="text/plain", headers={"Content-Disposition": f"attachment;filename=user_guide_{token}.txt"})
 
 # --- ADMIN PANEL ---
 @app.route('/admin.html', methods=['GET', 'POST'])
@@ -256,6 +267,7 @@ def api_handler():
     if err: return jsonify({'status': 'error', 'message': err}), 400
 
     try:
+        # User Action Handlers (App se call honge button click par, or admin direct run kar sakta hai)
         if action == 'subscribe':
             channel_input = request.args.get('channel_url') or request.args.get('channel_id')
             target_channel_id = resolve_channel_id(youtube, channel_input)
@@ -280,9 +292,13 @@ def api_handler():
             youtube.videos().rate(id=extract_video_id(video_input), rating='dislike').execute()
             return jsonify({'status': 'success', 'message': 'Video Disliked!'})
 
+        # Load / Read Handlers
         elif action == 'subscriptions':
-            # FIX: Get list of subscribed channels
-            res = youtube.subscriptions().list(part="snippet", mine=True, maxResults=50).execute()
+            page_token = request.args.get('pageToken')
+            kwargs = {"part": "snippet", "mine": True, "maxResults": 50}
+            if page_token: kwargs["pageToken"] = page_token
+            
+            res = youtube.subscriptions().list(**kwargs).execute()
             items = []
             for item in res.get('items', []):
                 snippet = item.get('snippet', {})
@@ -291,25 +307,41 @@ def api_handler():
                 items.append({
                     'title': snippet.get('title', 'Unknown Channel'),
                     'channelId': snippet.get('resourceId', {}).get('channelId'),
-                    'thumbnail': thumb_url
+                    'thumbnail': thumb_url,
+                    'channelUrl': f"https://youtube.com/channel/{snippet.get('resourceId', {}).get('channelId')}"
                 })
-            return jsonify({'status': 'success', 'results': items})
+            
+            return jsonify({
+                'status': 'success', 
+                'results': items, 
+                'nextPageToken': res.get('nextPageToken', None)
+            })
 
         elif action == 'search':
             query = request.args.get('q', 'trending')
-            # FIX: Changed maxResults from 12 to 50 for more videos
-            res = youtube.search().list(part="snippet", q=query, maxResults=50, type="video").execute()
+            page_token = request.args.get('pageToken')
+            
+            kwargs = {"part": "snippet", "q": query, "maxResults": 50, "type": "video"}
+            if page_token: kwargs["pageToken"] = page_token
+            
+            res = youtube.search().list(**kwargs).execute()
             items = []
             for item in res.get('items', []):
                 if item['id'].get('videoId'):
+                    ch_id = item['snippet']['channelId']
                     items.append({
                         'title': item['snippet']['title'],
                         'channelTitle': item['snippet']['channelTitle'],
-                        'channelId': item['snippet']['channelId'], # Added to allow subscription
+                        'channelId': ch_id,
                         'videoId': item['id']['videoId'],
-                        'thumbnail': item['snippet']['thumbnails']['high']['url']
+                        'thumbnail': item['snippet']['thumbnails']['high']['url'],
+                        'channelUrl': f"https://youtube.com/channel/{ch_id}"
                     })
-            return jsonify({'status': 'success', 'results': items})
+            return jsonify({
+                'status': 'success', 
+                'results': items,
+                'nextPageToken': res.get('nextPageToken', None) # Paging ke liye bhejna
+            })
 
         return jsonify({'status': 'error', 'message': 'Invalid action!'}), 400
     except Exception as e:
