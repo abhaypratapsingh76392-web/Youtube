@@ -3,33 +3,43 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>YouTube Bot API Panel</title>
+    <title>YouTube API Dashboard</title>
     <style>
-        * { box-sizing: border-box; }
-        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #0b0f19; color: #f1f5f9; margin: 0; padding: 15px; }
-        .navbar { display: flex; justify-content: space-between; align-items: center; max-width: 680px; margin: 0 auto 20px auto; padding: 10px 15px; background: #1e293b; border-radius: 12px; border: 1px solid #334155; }
-        .user-profile { display: flex; align-items: center; gap: 10px; }
-        .avatar { width: 38px; height: 38px; border-radius: 50%; background: #3b82f6; display: flex; align-items: center; justify-content: center; font-weight: bold; overflow: hidden; color: #fff; }
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #0b0f19; color: #f1f5f9; display: flex; min-height: 100vh; }
+        
+        /* Sidebar */
+        .sidebar { width: 250px; background: #131b2e; border-right: 1px solid #1e293b; padding: 20px; display: flex; flex-direction: column; }
+        .user-profile { display: flex; align-items: center; gap: 12px; margin-bottom: 30px; padding-bottom: 20px; border-bottom: 1px solid #334155; }
+        .avatar { width: 45px; height: 45px; border-radius: 50%; background: #3b82f6; display: flex; align-items: center; justify-content: center; font-weight: bold; overflow: hidden; color: #fff; }
         .avatar img { width: 100%; height: 100%; object-fit: cover; }
-        .user-name { font-size: 14px; font-weight: 600; color: #e2e8f0; }
-        .btn-logout { background: #ef4444; color: #fff; padding: 6px 14px; border-radius: 6px; font-size: 13px; text-decoration: none; font-weight: bold; }
-        .container { max-width: 680px; margin: 0 auto; background: #1e293b; border-radius: 16px; padding: 25px; box-shadow: 0 10px 30px rgba(0,0,0,0.5); border: 1px solid #334155; }
-        h2 { margin-top: 0; color: #38bdf8; font-size: 22px; }
-        .btn-login { display: block; text-align: center; background: #2563eb; color: #fff; padding: 14px; border-radius: 8px; font-weight: bold; text-decoration: none; margin-top: 15px; }
-        .token-header { display: flex; justify-content: space-between; align-items: center; margin-top: 10px; }
-        .token-box { background: #0f172a; border: 1px solid #38bdf8; padding: 12px; border-radius: 8px; font-family: monospace; font-size: 17px; color: #4ade80; font-weight: bold; margin: 8px 0 16px 0; word-break: break-all; }
-        .card { background: #0f172a; border: 1px solid #334155; border-radius: 10px; padding: 14px; margin-bottom: 16px; }
-        .card-title { font-size: 15px; font-weight: 600; color: #93c5fd; margin-bottom: 6px; }
-        .url-box { background: #182234; border: 1px solid #283548; padding: 10px; border-radius: 6px; font-family: monospace; font-size: 12px; color: #facc15; word-break: break-all; margin-bottom: 10px; }
-        .btn-row { display: flex; gap: 8px; }
-        .btn-copy { background: #3b82f6; color: white; border: none; padding: 6px 12px; border-radius: 5px; font-size: 12px; cursor: pointer; }
-        .btn-test { background: #64748b; color: white; border: none; padding: 6px 12px; border-radius: 5px; font-size: 12px; text-decoration: none; }
+        .user-name { font-size: 15px; font-weight: 600; color: #e2e8f0; word-break: break-all; }
+        
+        .menu-item { display: block; padding: 12px 15px; color: #94a3b8; text-decoration: none; border-radius: 8px; margin-bottom: 8px; font-size: 14px; transition: 0.2s; }
+        .menu-item:hover { background: #1e293b; color: #fff; }
+        .menu-item.active { background: #2563eb; color: #fff; font-weight: bold; }
+        
+        .btn-logout { margin-top: auto; background: #ef4444; color: #fff; padding: 12px; border-radius: 8px; text-align: center; text-decoration: none; font-weight: bold; font-size: 14px; }
+
+        /* Main Content */
+        .main-content { flex: 1; padding: 40px; display: flex; flex-direction: column; align-items: center; justify-content: center; }
+        .welcome-card { background: #1e293b; border-radius: 16px; padding: 40px; border: 1px solid #334155; box-shadow: 0 10px 30px rgba(0,0,0,0.5); max-width: 600px; width: 100%; text-align: center; }
+        h1 { color: #38bdf8; font-size: 26px; margin-bottom: 10px; }
+        p { color: #94a3b8; margin-bottom: 25px; font-size: 15px; line-height: 1.5; }
+        
+        .token-box { background: #0f172a; border: 2px dashed #38bdf8; padding: 18px; border-radius: 12px; font-family: monospace; font-size: 20px; color: #4ade80; font-weight: bold; margin-bottom: 25px; word-break: break-all; letter-spacing: 1px; }
+        
+        .btn-guide { display: inline-block; background: #10b981; color: #fff; padding: 15px 30px; border-radius: 10px; font-weight: bold; text-decoration: none; font-size: 16px; box-shadow: 0 4px 14px rgba(16,185,129,0.3); transition: 0.2s; }
+        .btn-guide:hover { background: #059669; transform: translateY(-2px); }
+        
+        .btn-login { display: inline-block; background: #2563eb; color: #fff; padding: 15px 40px; border-radius: 10px; font-weight: bold; text-decoration: none; font-size: 16px; }
     </style>
 </head>
 <body>
 
     {% if token %}
-    <div class="navbar">
+    <!-- Sidebar -->
+    <div class="sidebar">
         <div class="user-profile">
             <div class="avatar">
                 {% if user and user.picture %}
@@ -40,71 +50,36 @@
             </div>
             <div class="user-name">{{ user.title if user else 'Connected' }}</div>
         </div>
+        
+        <a href="/" class="menu-item active">🏠 Dashboard</a>
+        <a href="/download-guide?token={{ token }}" class="menu-item">📥 Download Guide</a>
+        
         <a href="/logout" class="btn-logout">Logout</a>
+    </div>
+
+    <!-- Main Content -->
+    <div class="main-content">
+        <div class="welcome-card">
+            <h1>Welcome to API Dashboard</h1>
+            <p>Aapka account successfully connect ho gaya hai. Niche diya gaya token use karke aap apni website me API requests bhej sakte hain.</p>
+            
+            <div class="token-box">{{ token }}</div>
+            
+            <p style="font-size: 14px;">Is token ko use karna sikhne ke liye niche diye gaye button se guide download karein. Guide me wahi URLs hain jo aapko apni website me lagane hain.</p>
+            
+            <a href="/download-guide?token={{ token }}" class="btn-guide">📥 Download Premium Guide</a>
+        </div>
+    </div>
+    {% else %}
+    <!-- Login Screen -->
+    <div class="main-content" style="width: 100%;">
+        <div class="welcome-card">
+            <h1>YouTube Automation API</h1>
+            <p>Apna khud ka Vidmate jaisa app banane ke liye Google account connect karein.</p>
+            <a href="/login" class="btn-login">Google se Connect Karein</a>
+        </div>
     </div>
     {% endif %}
 
-    <div class="container">
-        <h2>YouTube Automation API Controller</h2>
-
-        {% if not token %}
-            <p style="color: #94a3b8; font-size: 15px;">Google se login karein taaki aapka permanent token create ho sake:</p>
-            <a href="/login" class="btn-login">Google se Connect Karein</a>
-        {% else %}
-            <div class="token-header">
-                <span style="color: #94a3b8; font-size: 14px;">Aapka Permanent Token:</span>
-            </div>
-            <div class="token-box">{{ token }}</div>
-
-            <!-- 1. SUBSCRIBE -->
-            <div class="card">
-                <div class="card-title">1. Subscribe URL:</div>
-                <div class="url-box" id="url-sub">https://no-fun-only-money.onrender.com/api?token={{ token }}&action=subscribe&channel_url=https://www.youtube.com/@MrBeast</div>
-                <div class="btn-row">
-                    <button class="btn-copy" onclick="copyText('url-sub')">Copy Link</button>
-                    <a class="btn-test" target="_blank" href="/api?token={{ token }}&action=subscribe&channel_url=https://www.youtube.com/@MrBeast">Hit / Test</a>
-                </div>
-            </div>
-
-            <!-- 2. UNSUBSCRIBE -->
-            <div class="card">
-                <div class="card-title">2. Unsubscribe URL:</div>
-                <div class="url-box" id="url-unsub">https://no-fun-only-money.onrender.com/api?token={{ token }}&action=unsubscribe&channel_url=https://www.youtube.com/@MrBeast</div>
-                <div class="btn-row">
-                    <button class="btn-copy" onclick="copyText('url-unsub')">Copy Link</button>
-                    <a class="btn-test" target="_blank" href="/api?token={{ token }}&action=unsubscribe&channel_url=https://www.youtube.com/@MrBeast">Hit / Test</a>
-                </div>
-            </div>
-
-            <!-- 3. LIKE VIDEO -->
-            <div class="card">
-                <div class="card-title">3. Like Video URL:</div>
-                <div class="url-box" id="url-like">https://no-fun-only-money.onrender.com/api?token={{ token }}&action=like&video_url=https://www.youtube.com/watch?v=dQw4w9WgXcQ</div>
-                <div class="btn-row">
-                    <button class="btn-copy" onclick="copyText('url-like')">Copy Link</button>
-                    <a class="btn-test" target="_blank" href="/api?token={{ token }}&action=like&video_url=https://www.youtube.com/watch?v=dQw4w9WgXcQ">Hit / Test</a>
-                </div>
-            </div>
-
-            <!-- 4. DISLIKE VIDEO -->
-            <div class="card">
-                <div class="card-title">4. Dislike Video URL:</div>
-                <div class="url-box" id="url-dislike">https://no-fun-only-money.onrender.com/api?token={{ token }}&action=dislike&video_url=https://www.youtube.com/watch?v=dQw4w9WgXcQ</div>
-                <div class="btn-row">
-                    <button class="btn-copy" onclick="copyText('url-dislike')">Copy Link</button>
-                    <a class="btn-test" target="_blank" href="/api?token={{ token }}&action=dislike&video_url=https://www.youtube.com/watch?v=dQw4w9WgXcQ">Hit / Test</a>
-                </div>
-            </div>
-        {% endif %}
-    </div>
-
-    <script>
-        function copyText(id) {
-            const text = document.getElementById(id).innerText;
-            navigator.clipboard.writeText(text).then(() => {
-                alert("URL Copy ho gaya!");
-            });
-        }
-    </script>
 </body>
 </html>
