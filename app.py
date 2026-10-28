@@ -142,7 +142,6 @@ def logout():
 @app.route('/download-guide')
 def download_guide():
     token = request.args.get('token', 'YOUR_TOKEN')
-    # FIX: Guide update kiya jisme user keval load aur play kar sakta hai uske details, API info add kiya, private actions removed
     guide_template = """
 =====================================================
         YOUTUBE APP / AUTOMATION - USER GUIDE
@@ -161,48 +160,20 @@ https://no-fun-only-money.onrender.com/api?token=TOKEN_PLACEHOLDER&action=search
 - q: Aap kya search karna chahte hain (e.g. trending india, latest songs).
 - pageToken: (Optional) Infinite scrolling ke liye. API response me 'nextPageToken' aayega, usko agli request me bhej kar aur aage ke videos la sakte hain (unlimited scrolling).
 
-JAVASCRIPT EXAMPLE (Fetch):
-fetch('https://no-fun-only-money.onrender.com/api?token=TOKEN_PLACEHOLDER&action=search&q=latest+movies')
-  .then(res => res.json())
-  .then(data => {
-      console.log("Videos List:", data.results);
-      // Agar 'data.nextPageToken' ho toh usse agli baar bhejein aur videos ke liye.
-  });
+-----------------------------------------------------
+2. VIDEOS KO WEBSITE / APP ME PLAY KAISE KAREIN BINA LOGO KE?
+-----------------------------------------------------
+Ab aap direct MP4 stream le sakte hain taaki 'Watch on YouTube' logo na aaye:
+ENDPOINT: https://no-fun-only-money.onrender.com/api?token=TOKEN_PLACEHOLDER&action=get_stream&video_id=VIDEO_ID
 
------------------------------------------------------
-2. VIDEOS KO WEBSITE / APP ME PLAY KAISE KAREIN?
------------------------------------------------------
-Aap search se mile 'videoId' ko directly iframe me lagakar play kar sakte hain:
-HTML Code:
-<iframe width="100%" height="400" src="https://www.youtube.com/embed/VIDEO_ID" frameborder="0" allowfullscreen></iframe>
+HTML5 Video Tag me lagayein:
+<video width="100%" controls autoplay src="API_SE_MILA_HUA_URL"></video>
 
 -----------------------------------------------------
 3. APNE SUBSCRIBED CHANNELS KAISE CHECK KAREIN?
 -----------------------------------------------------
 URL ENDPOINT:
 https://no-fun-only-money.onrender.com/api?token=TOKEN_PLACEHOLDER&action=subscriptions
-
-Ye API un channels ki list degi jinko aapne subscribe kiya hua hai. Isse aap apne app me 'Subscriptions' tab bana sakte hain.
-
-JAVASCRIPT EXAMPLE:
-fetch('https://no-fun-only-money.onrender.com/api?token=TOKEN_PLACEHOLDER&action=subscriptions')
-  .then(res => res.json())
-  .then(data => {
-      console.log("Subscribed Channels:", data.results);
-  });
-
------------------------------------------------------
-4. CHANNELS KO VISIT KAISE KAREIN?
------------------------------------------------------
-API response (Search ya Subscriptions) se mile 'channelId' ka use karke aap channel ka YouTube page khol sakte hain.
-URL format: https://www.youtube.com/channel/CHANNEL_ID
-
------------------------------------------------------
-5. VIDEO DOWNLOAD KARNA
------------------------------------------------------
-YouTube API directly MP4 download nahi deti. Lekin aap apni website me 'videoId' ke aadhar par kisi 3rd party downloader (jaise y2mate ya ssyoutube links) ka button de sakte hain jisse user ke phone me direct load ya browser me download shuru ho jaye.
-
-NOTE: API actions jaise auto Like, auto Subscribe, aur Dislike karne ke URLs sirf Admin control panel me private hote hain. App user video play karte time GUI button click karke action le sakte hain jo directly aapke app (index.html) ke through call honge.
 =====================================================
 """
     guide_text = guide_template.replace("TOKEN_PLACEHOLDER", token)
@@ -267,7 +238,7 @@ def api_handler():
     if err: return jsonify({'status': 'error', 'message': err}), 400
 
     try:
-        # User Action Handlers (App se call honge button click par, or admin direct run kar sakta hai)
+        # User Action Handlers
         if action == 'subscribe':
             channel_input = request.args.get('channel_url') or request.args.get('channel_id')
             target_channel_id = resolve_channel_id(youtube, channel_input)
@@ -291,6 +262,31 @@ def api_handler():
             video_input = request.args.get('video_url') or request.args.get('video_id')
             youtube.videos().rate(id=extract_video_id(video_input), rating='dislike').execute()
             return jsonify({'status': 'success', 'message': 'Video Disliked!'})
+
+        # --- NAYA FEATURE: NO LOGO RAW STREAM / AUTO DOWNLOAD VIA PUBLIC API ---
+        elif action == 'get_stream':
+            video_id = request.args.get('video_id')
+            if not video_id: return jsonify({'status': 'error', 'message': 'Missing video_id'}), 400
+            
+            try:
+                # Piped API public instance use karke raw stream le rahe hain
+                res = requests.get(f"https://pipedapi.kavin.rocks/streams/{video_id}", timeout=15)
+                data = res.json()
+                stream_url = None
+                
+                # Sabse pehle combined (video+audio) best quality dhoondhte hain
+                for stream in data.get('videoStreams', []):
+                    if not stream.get('videoOnly'):
+                        stream_url = stream.get('url')
+                        if stream.get('quality') == '720p':
+                            break
+                
+                if stream_url:
+                    return jsonify({'status': 'success', 'stream_url': stream_url})
+                else:
+                    return jsonify({'status': 'failed', 'message': 'Raw stream not available.'}), 404
+            except Exception as e:
+                return jsonify({'status': 'failed', 'error': str(e)}), 500
 
         # Load / Read Handlers
         elif action == 'subscriptions':
