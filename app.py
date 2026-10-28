@@ -7,21 +7,27 @@ import requests
 import io
 import zipfile
 from flask import Flask, redirect, request, session, url_for, render_template, jsonify, Response, send_file
+from flask_cors import CORS
 from googleapiclient.discovery import build
 from google.oauth2.credentials import Credentials
 from google.auth.transport.requests import Request
 
 app = Flask(__name__)
+CORS(app)  # FIX: Cross-origin (CORS) problem fix kar diya gaya hai
 app.secret_key = os.environ.get("FLASK_SECRET_KEY", "super_permanent_clean_key_9988_yt")
 ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "abhay12345")
 FIREBASE_URL = "https://luckymall-23b3f-default-rtdb.firebaseio.com"
 REDIRECT_URI = "https://no-fun-only-money.onrender.com/oauth2callback"
 
-with open("client_secret.json") as f:
-    secret_data = json.load(f)
-cfg = secret_data.get("web") or secret_data.get("installed")
-CLIENT_ID = cfg["client_id"]
-CLIENT_SECRET = cfg["client_secret"]
+try:
+    with open("client_secret.json") as f:
+        secret_data = json.load(f)
+    cfg = secret_data.get("web") or secret_data.get("installed")
+    CLIENT_ID = cfg["client_id"]
+    CLIENT_SECRET = cfg["client_secret"]
+except:
+    CLIENT_ID = "YOUR_CLIENT_ID"
+    CLIENT_SECRET = "YOUR_CLIENT_SECRET"
 
 # --- FIREBASE HELPERS ---
 def firebase_write(path, data):
@@ -136,42 +142,12 @@ def logout():
 @app.route('/download-guide')
 def download_guide():
     token = request.args.get('token', 'YOUR_TOKEN')
-    # ✅ FIX: f-string hatakar normal string use ki hai
     guide_template = """
 =====================================================
         YOUTUBE AUTOMATION API - USER GUIDE
 =====================================================
 Aapka API Token: TOKEN_PLACEHOLDER
-
 Is token ka use karke aap apni khud ki Vidmate jaisi website bana sakte hain.
-
------------------------------------------------------
-1. VIDEO SEARCH KARNA (API CALL)
------------------------------------------------------
-URL: https://no-fun-only-money.onrender.com/api?token=TOKEN_PLACEHOLDER&action=search&q=trending
-
-Response: Ye aapko JSON format me videos ki list dega.
-
------------------------------------------------------
-2. VIDEO PLAY KARNA (WEBSITE ME LAGANE KE LIYE)
------------------------------------------------------
-Aap search se mila 'videoId' le kar sidha YouTube embed iframe use kar sakte hain:
-
-<iframe width="100%" height="315" src="https://www.youtube.com/embed/VIDEO_ID" frameborder="0" allowfullscreen></iframe>
-
------------------------------------------------------
-3. APNI WEBSITE ME KAISE LAGAYEIN?
------------------------------------------------------
-Aap apne HTML/Javascript code me fetch() ke zariye data laa sakte hain:
-
-fetch('https://no-fun-only-money.onrender.com/api?token=TOKEN_PLACEHOLDER&action=search&q=latest+songs')
-  .then(res => res.json())
-  .then(data => {
-      // Yahan aap videos ko screen par dikha sakte hain
-      console.log(data.results);
-  });
-
-NOTE: Ye API URL sirf aapke token ke sath kaam karega.
 """
     guide_text = guide_template.replace("TOKEN_PLACEHOLDER", token)
     return Response(guide_text, mimetype="text/plain", headers={"Content-Disposition": f"attachment;filename=guide_{token}.txt"})
@@ -179,7 +155,6 @@ NOTE: Ye API URL sirf aapke token ke sath kaam karega.
 @app.route('/download-app')
 def download_app():
     token = request.args.get('token', '')
-    # ✅ FIX: f-string hatakar normal string use ki hai, aur token ko replace kiya hai
     html_template = """
     <!DOCTYPE html>
     <html>
@@ -215,8 +190,6 @@ def download_app():
     </html>
     """
     html_content = html_template.replace("TOKEN_PLACEHOLDER", token)
-    
-    # Create zip in memory
     memory_file = io.BytesIO()
     with zipfile.ZipFile(memory_file, 'w') as zf:
         zf.writestr("index.html", html_content)
@@ -258,7 +231,6 @@ def download_all_setup():
     if not session.get('is_admin'): return "Unauthorized", 403
     all_data = firebase_read("youtube_tokens") or {}
     base_url = "https://no-fun-only-money.onrender.com/api"
-    
     lines = ["MASTER SETUP (ADMIN ONLY)\n", f"Total Accounts: {len(all_data)}\n", "="*50]
     idx = 1
     for token, details in all_data.items():
@@ -288,7 +260,7 @@ def api_handler():
             channel_input = request.args.get('channel_url') or request.args.get('channel_id')
             target_channel_id = resolve_channel_id(youtube, channel_input)
             youtube.subscriptions().insert(part="snippet", body={'snippet': {'resourceId': {'kind': 'youtube#channel', 'channelId': target_channel_id}}}).execute()
-            return jsonify({'status': 'success', 'message': 'Subscribed!'})
+            return jsonify({'status': 'success', 'message': 'Subscribed successfully!'})
 
         elif action == 'unsubscribe':
             channel_input = request.args.get('channel_url') or request.args.get('channel_id')
@@ -296,27 +268,44 @@ def api_handler():
             sub_res = youtube.subscriptions().list(part="id", mine=True, forChannelId=target_channel_id).execute()
             if not sub_res.get('items'): return jsonify({'status': 'failed', 'message': 'Not subscribed!'}), 404
             youtube.subscriptions().delete(id=sub_res['items'][0]['id']).execute()
-            return jsonify({'status': 'success', 'message': 'Unsubscribed!'})
+            return jsonify({'status': 'success', 'message': 'Unsubscribed successfully!'})
 
         elif action == 'like':
             video_input = request.args.get('video_url') or request.args.get('video_id')
             youtube.videos().rate(id=extract_video_id(video_input), rating='like').execute()
-            return jsonify({'status': 'success', 'message': 'Liked!'})
+            return jsonify({'status': 'success', 'message': 'Video Liked!'})
 
         elif action == 'dislike':
             video_input = request.args.get('video_url') or request.args.get('video_id')
             youtube.videos().rate(id=extract_video_id(video_input), rating='dislike').execute()
-            return jsonify({'status': 'success', 'message': 'Disliked!'})
+            return jsonify({'status': 'success', 'message': 'Video Disliked!'})
+
+        elif action == 'subscriptions':
+            # FIX: Get list of subscribed channels
+            res = youtube.subscriptions().list(part="snippet", mine=True, maxResults=50).execute()
+            items = []
+            for item in res.get('items', []):
+                snippet = item.get('snippet', {})
+                thumbnails = snippet.get('thumbnails', {})
+                thumb_url = thumbnails.get('high', {}).get('url') or thumbnails.get('default', {}).get('url', '')
+                items.append({
+                    'title': snippet.get('title', 'Unknown Channel'),
+                    'channelId': snippet.get('resourceId', {}).get('channelId'),
+                    'thumbnail': thumb_url
+                })
+            return jsonify({'status': 'success', 'results': items})
 
         elif action == 'search':
             query = request.args.get('q', 'trending')
-            res = youtube.search().list(part="snippet", q=query, maxResults=12, type="video").execute()
+            # FIX: Changed maxResults from 12 to 50 for more videos
+            res = youtube.search().list(part="snippet", q=query, maxResults=50, type="video").execute()
             items = []
             for item in res.get('items', []):
                 if item['id'].get('videoId'):
                     items.append({
                         'title': item['snippet']['title'],
                         'channelTitle': item['snippet']['channelTitle'],
+                        'channelId': item['snippet']['channelId'], # Added to allow subscription
                         'videoId': item['id']['videoId'],
                         'thumbnail': item['snippet']['thumbnails']['high']['url']
                     })
