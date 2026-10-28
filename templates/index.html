@@ -8,50 +8,59 @@
         * { box-sizing: border-box; margin: 0; padding: 0; }
         body { font-family: -apple-system, sans-serif; background: #0b0f19; color: #f1f5f9; display: flex; min-height: 100vh; }
         
-        /* Sidebar */
-        .sidebar { width: 250px; background: #131b2e; border-right: 1px solid #1e293b; padding: 20px; display: flex; flex-direction: column; position: fixed; height: 100%; }
+        .sidebar { width: 250px; background: #131b2e; border-right: 1px solid #1e293b; padding: 20px; display: flex; flex-direction: column; position: fixed; height: 100%; z-index:100; }
         .user-profile { display: flex; align-items: center; gap: 12px; margin-bottom: 30px; padding-bottom: 20px; border-bottom: 1px solid #334155; }
         .avatar { width: 45px; height: 45px; border-radius: 50%; background: #3b82f6; display: flex; align-items: center; justify-content: center; overflow: hidden; }
         .avatar img { width: 100%; height: 100%; object-fit: cover; }
         .user-name { font-size: 14px; font-weight: 600; color: #e2e8f0; word-break: break-all; }
         
-        .menu-item { display: block; padding: 12px 15px; color: #94a3b8; text-decoration: none; border-radius: 8px; margin-bottom: 8px; font-size: 14px; }
+        .menu-item { display: block; padding: 12px 15px; color: #94a3b8; text-decoration: none; border-radius: 8px; margin-bottom: 8px; font-size: 14px; cursor: pointer; }
         .menu-item:hover { background: #1e293b; color: #fff; }
         .menu-item.active { background: #2563eb; color: #fff; font-weight: bold; }
         .btn-logout { margin-top: auto; background: #ef4444; color: #fff; padding: 12px; border-radius: 8px; text-align: center; text-decoration: none; font-weight: bold; font-size: 14px; }
 
-        /* Main Content */
         .main-content { margin-left: 250px; flex: 1; padding: 30px; }
         
         .token-section { background: #1e293b; border-radius: 12px; padding: 20px; border: 1px solid #334155; margin-bottom: 25px; }
         .token-box { background: #0f172a; border: 1px dashed #38bdf8; padding: 12px; border-radius: 8px; font-family: monospace; font-size: 18px; color: #4ade80; font-weight: bold; text-align: center; margin-bottom: 15px; }
         
         .actions-row { display: flex; gap: 15px; flex-wrap: wrap; }
-        .btn { padding: 12px 20px; border-radius: 8px; font-weight: bold; text-decoration: none; font-size: 14px; display: inline-flex; align-items: center; gap: 8px; border: none; cursor: pointer; }
-        .btn-guide { background: #10b981; color: #fff; }
-        .btn-zip { background: #f59e0b; color: #fff; }
+        .btn { padding: 10px 18px; border-radius: 8px; font-weight: bold; text-decoration: none; font-size: 13px; display: inline-flex; align-items: center; gap: 8px; border: none; cursor: pointer; color: #fff; }
+        .btn-guide { background: #10b981; }
+        .btn-zip { background: #f59e0b; }
+        .btn-like { background: #3b82f6; }
+        .btn-dislike { background: #64748b; }
+        .btn-sub { background: #ef4444; }
+        .btn-share { background: #8b5cf6; }
         
-        /* Video Player & Grid */
-        .player-section { display: none; margin-bottom: 25px; background: #000; border-radius: 12px; overflow: hidden; border: 1px solid #334155; }
-        .player-section iframe { width: 100%; height: 400px; border: none; }
+        .player-section { display: none; margin-bottom: 25px; background: #000; border-radius: 12px; overflow: hidden; border: 1px solid #334155; position: sticky; top: 20px; z-index: 50; box-shadow: 0 10px 30px rgba(0,0,0,0.5); }
+        .player-section iframe { width: 100%; height: 450px; border: none; }
+        .player-actions { background: #0f172a; padding: 12px; display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; }
         
         .search-bar { display: flex; gap: 10px; margin-bottom: 20px; }
         .search-bar input { flex: 1; padding: 12px; border-radius: 8px; border: 1px solid #334155; background: #1e293b; color: #fff; font-size: 16px; outline: none; }
         .search-bar button { padding: 12px 20px; background: #3b82f6; color: #fff; border: none; border-radius: 8px; font-weight: bold; cursor: pointer; }
 
         .video-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 20px; }
-        .video-card { background: #1e293b; border-radius: 12px; overflow: hidden; cursor: pointer; transition: transform 0.2s; border: 1px solid #334155; }
-        .video-card:hover { transform: translateY(-5px); }
+        .video-card { background: #1e293b; border-radius: 12px; overflow: hidden; cursor: pointer; transition: transform 0.2s; border: 1px solid #334155; position: relative; }
+        .video-card:hover { transform: translateY(-5px); border-color: #3b82f6; }
         .video-card img { width: 100%; height: 130px; object-fit: cover; }
         .video-card .info { padding: 12px; }
         .video-card .title { font-size: 14px; font-weight: bold; color: #f8fafc; margin-bottom: 5px; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
         .video-card .channel { font-size: 12px; color: #94a3b8; }
+        
+        /* Subs Grid */
+        .channel-card { background: #1e293b; border-radius: 12px; padding: 15px; text-align: center; border: 1px solid #334155; }
+        .channel-card img { width: 80px; height: 80px; border-radius: 50%; object-fit: cover; margin-bottom: 10px; }
+        .channel-card .title { font-size: 14px; font-weight: bold; color: #fff; margin-bottom: 10px; }
+        
+        .view-section { display: none; }
+        .view-section.active { display: block; }
     </style>
 </head>
 <body>
 
     {% if token %}
-    <!-- Sidebar -->
     <div class="sidebar">
         <div class="user-profile">
             <div class="avatar">
@@ -60,63 +69,82 @@
             <div class="user-name">{{ user.title if user else 'Connected' }}</div>
         </div>
         
-        <a href="/" class="menu-item active">🏠 Dashboard</a>
-        <a href="/download-guide?token={{ token }}" class="menu-item">📥 Download Guide (TXT)</a>
+        <a onclick="switchTab('home')" class="menu-item active" id="nav-home">🏠 Home (Videos)</a>
+        <a onclick="switchTab('subs')" class="menu-item" id="nav-subs">📺 Subscriptions</a>
         
+        <a href="/download-guide?token={{ token }}" class="menu-item" style="margin-top:20px;">📄 Guide Download</a>
         <a href="/logout" class="btn-logout">Logout</a>
     </div>
 
-    <!-- Main Content -->
     <div class="main-content">
         
-        <!-- Token & Downloads -->
-        <div class="token-section">
-            <h3 style="margin-bottom: 10px; color: #94a3b8; font-size: 14px;">Aapka Permanent Token:</h3>
-            <div class="token-box">{{ token }}</div>
-            <p style="color: #94a3b8; font-size: 13px; margin-bottom: 15px;">Is token ko apni website me use karein. Niche diye gaye button se aap apni Vidmate app ka code download kar sakte hain.</p>
-            
-            <div class="actions-row">
-                <a href="/download-guide?token={{ token }}" class="btn btn-guide">📥 Download Guide</a>
-                <a href="/download-app?token={{ token }}" class="btn btn-zip">📦 Download App Code (ZIP)</a>
-            </div>
-        </div>
-
-        <!-- Video Player (Hidden by Default) -->
+        <!-- Player Section with Interactions (Like, Sub, etc.) -->
         <div class="player-section" id="playerSection">
-            <div style="padding: 10px; background: #1e293b; display: flex; justify-content: space-between; color: #fff;">
-                <span id="nowPlaying" style="font-size: 14px; font-weight: bold;">Playing...</span>
-                <button onclick="closePlayer()" style="background: #ef4444; color: #fff; border: none; padding: 5px 10px; border-radius: 5px; cursor: pointer;">Close Player</button>
+            <div style="padding: 10px; background: #1e293b; display: flex; justify-content: space-between; color: #fff; align-items:center;">
+                <span id="nowPlaying" style="font-size: 15px; font-weight: bold; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; padding-right: 15px;">Playing...</span>
+                <button onclick="closePlayer()" style="background: #ef4444; color: #fff; border: none; padding: 6px 12px; border-radius: 5px; cursor: pointer; font-weight:bold;">X Close</button>
             </div>
             <iframe id="videoFrame" src="" allow="autoplay; encrypted-media" allowfullscreen></iframe>
+            
+            <div class="player-actions">
+                <button class="btn btn-like" onclick="doAction('like')">👍 Like</button>
+                <button class="btn btn-dislike" onclick="doAction('dislike')">👎 Dislike</button>
+                <button class="btn btn-sub" onclick="doAction('subscribe')">🔔 Subscribe Channel</button>
+                <button class="btn btn-share" onclick="shareVideo()">↪️ Share</button>
+            </div>
         </div>
 
-        <!-- YouTube Videos Section -->
-        <h2 style="color: #38bdf8; margin-bottom: 15px; font-size: 20px;">YouTube Videos (Your Feed)</h2>
-        
-        <div class="search-bar">
-            <input type="text" id="searchQuery" placeholder="Search videos..." value="trending songs">
-            <button onclick="searchVideos()">Search</button>
+        <!-- Home View -->
+        <div id="view-home" class="view-section active">
+            <h2 style="color: #38bdf8; margin-bottom: 15px; font-size: 22px;">Video Feed (Home)</h2>
+            <div class="search-bar">
+                <input type="text" id="searchQuery" placeholder="Search videos, songs, movies..." value="trending india">
+                <button onclick="searchVideos()">Search</button>
+            </div>
+            <div class="video-grid" id="videoGrid">
+                <p style="color: #94a3b8;">Loading videos...</p>
+            </div>
         </div>
 
-        <div class="video-grid" id="videoGrid">
-            <!-- Videos will load here via JS -->
-            <p style="color: #94a3b8;">Loading videos...</p>
+        <!-- Subscriptions View -->
+        <div id="view-subs" class="view-section">
+            <h2 style="color: #38bdf8; margin-bottom: 15px; font-size: 22px;">My Subscribed Channels</h2>
+            <div class="video-grid" id="subsGrid">
+                <p style="color: #94a3b8;">Loading subscriptions...</p>
+            </div>
         </div>
+
     </div>
 
     <script>
         const TOKEN = "{{ token }}";
-        const API_BASE = "https://no-fun-only-money.onrender.com/api";
+        const API_BASE = "https://no-fun-only-money.onrender.com/api"; // Aapka API Base URL
+        
+        let currentVideoId = "";
+        let currentChannelId = "";
 
-        // Load initial videos
         window.onload = () => {
             searchVideos();
         };
 
+        function switchTab(tab) {
+            document.getElementById('nav-home').classList.remove('active');
+            document.getElementById('nav-subs').classList.remove('active');
+            document.getElementById('nav-' + tab).classList.add('active');
+
+            document.getElementById('view-home').classList.remove('active');
+            document.getElementById('view-subs').classList.remove('active');
+            document.getElementById('view-' + tab).classList.add('active');
+
+            if(tab === 'subs') {
+                loadSubscriptions();
+            }
+        }
+
         function searchVideos() {
             const q = document.getElementById('searchQuery').value;
             const grid = document.getElementById('videoGrid');
-            grid.innerHTML = '<p style="color: #94a3b8;">Loading...</p>';
+            grid.innerHTML = '<p style="color: #94a3b8;">Loading 50 videos...</p>';
 
             fetch(`${API_BASE}?token=${TOKEN}&action=search&q=${encodeURIComponent(q)}`)
             .then(res => res.json())
@@ -125,7 +153,7 @@
                     let html = '';
                     data.results.forEach(v => {
                         html += `
-                            <div class="video-card" onclick="playVideo('${v.videoId}', '${v.title.replace(/'/g, "\\'")}')">
+                            <div class="video-card" onclick="playVideo('${v.videoId}', '${v.title.replace(/'/g, "\'")}', '${v.channelId}')">
                                 <img src="${v.thumbnail}" alt="thumbnail">
                                 <div class="info">
                                     <div class="title">${v.title}</div>
@@ -140,11 +168,39 @@
                 }
             })
             .catch(err => {
-                grid.innerHTML = '<p style="color: #ef4444;">Error loading videos. (Token check karein)</p>';
+                grid.innerHTML = '<p style="color: #ef4444;">Error loading videos.</p>';
             });
         }
 
-        function playVideo(videoId, title) {
+        function loadSubscriptions() {
+            const grid = document.getElementById('subsGrid');
+            grid.innerHTML = '<p style="color: #94a3b8;">Fetching your channels...</p>';
+
+            fetch(`${API_BASE}?token=${TOKEN}&action=subscriptions`)
+            .then(res => res.json())
+            .then(data => {
+                if(data.status === 'success' && data.results.length > 0) {
+                    let html = '';
+                    data.results.forEach(ch => {
+                        html += `
+                            <div class="channel-card">
+                                <img src="${ch.thumbnail}" alt="channel">
+                                <div class="title">${ch.title}</div>
+                                <button class="btn btn-sub" style="padding: 6px 12px; font-size:12px;" onclick="unsubChannel('${ch.channelId}')">Unsubscribe</button>
+                            </div>
+                        `;
+                    });
+                    grid.innerHTML = html;
+                } else {
+                    grid.innerHTML = '<p style="color: #94a3b8;">No subscriptions found.</p>';
+                }
+            });
+        }
+
+        function playVideo(videoId, title, channelId) {
+            currentVideoId = videoId;
+            currentChannelId = channelId;
+            
             const playerSection = document.getElementById('playerSection');
             const iframe = document.getElementById('videoFrame');
             const nowPlaying = document.getElementById('nowPlaying');
@@ -153,8 +209,7 @@
             nowPlaying.innerText = title;
             playerSection.style.display = 'block';
             
-            // Scroll to player
-            playerSection.scrollIntoView({ behavior: 'smooth' });
+            playerSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
         }
 
         function closePlayer() {
@@ -163,14 +218,55 @@
             iframe.src = "";
             playerSection.style.display = 'none';
         }
+
+        // Action function for Like, Dislike, Subscribe
+        function doAction(action) {
+            if(!currentVideoId && action !== 'subscribe') return;
+            
+            let url = `${API_BASE}?token=${TOKEN}&action=${action}`;
+            if(action === 'subscribe') {
+                url += `&channel_id=${currentChannelId}`;
+            } else {
+                url += `&video_id=${currentVideoId}`;
+            }
+
+            fetch(url)
+            .then(res => res.json())
+            .then(data => {
+                if(data.status === 'success') {
+                    alert("✅ " + data.message);
+                } else {
+                    alert("❌ " + (data.message || data.error));
+                }
+            })
+            .catch(err => alert("Error processing request."));
+        }
+
+        function unsubChannel(channelId) {
+            if(!confirm("Are you sure you want to unsubscribe?")) return;
+            
+            fetch(`${API_BASE}?token=${TOKEN}&action=unsubscribe&channel_id=${channelId}`)
+            .then(res => res.json())
+            .then(data => {
+                alert(data.message);
+                loadSubscriptions(); // Reload list
+            });
+        }
+
+        function shareVideo() {
+            if(!currentVideoId) return;
+            const url = `https://youtube.com/watch?v=${currentVideoId}`;
+            navigator.clipboard.writeText(url).then(() => {
+                alert("✅ Video Link Copied to Clipboard!");
+            });
+        }
     </script>
     {% else %}
-    <!-- Login Screen -->
     <div style="width: 100%; display: flex; justify-content: center; align-items: center;">
         <div style="background: #1e293b; padding: 40px; border-radius: 16px; text-align: center; border: 1px solid #334155; max-width: 400px;">
-            <h1 style="color: #38bdf8; margin-bottom: 10px;">YouTube Automation</h1>
-            <p style="color: #94a3b8; margin-bottom: 20px;">Apna khud ka Vidmate app banane ke liye Google account connect karein.</p>
-            <a href="/login" style="background: #2563eb; color: #fff; padding: 12px 25px; border-radius: 8px; text-decoration: none; font-weight: bold; display: inline-block;">Google se Connect Karein</a>
+            <h1 style="color: #38bdf8; margin-bottom: 10px;">YouTube App Fix</h1>
+            <p style="color: #94a3b8; margin-bottom: 20px;">Apna Google account connect karein.</p>
+            <a href="/login" style="background: #2563eb; color: #fff; padding: 12px 25px; border-radius: 8px; text-decoration: none; font-weight: bold; display: inline-block;">Login with Google</a>
         </div>
     </div>
     {% endif %}
