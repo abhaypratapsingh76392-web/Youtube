@@ -268,25 +268,34 @@ def api_handler():
             video_id = request.args.get('video_id')
             if not video_id: return jsonify({'status': 'error', 'message': 'Missing video_id'}), 400
             
-            try:
-                # FIXED: Changed API to a more stable instance to prevent fallback to YouTube iframe logo
-                res = requests.get(f"https://api.piped.projectsegfau.lt/streams/{video_id}", timeout=15)
-                data = res.json()
-                stream_url = None
-                
-                # Sabse pehle combined (video+audio) best quality dhoondhte hain
-                for stream in data.get('videoStreams', []):
-                    if not stream.get('videoOnly'):
-                        stream_url = stream.get('url')
-                        if stream.get('quality') == '720p':
-                            break
-                
-                if stream_url:
-                    return jsonify({'status': 'success', 'stream_url': stream_url})
-                else:
-                    return jsonify({'status': 'failed', 'message': 'Raw stream not available.'}), 404
-            except Exception as e:
-                return jsonify({'status': 'failed', 'error': str(e)}), 500
+            # FIXED: 4 different API servers added! Agar ek block ho jaaye toh code crash nahi karega
+            instances = [
+                "https://pipedapi.kavin.rocks",
+                "https://pipedapi.tokhmi.xyz",
+                "https://pipedapi.smnz.de",
+                "https://piped-api.garudalinux.org"
+            ]
+            
+            stream_url = None
+            for base_url in instances:
+                try:
+                    res = requests.get(f"{base_url}/streams/{video_id}", timeout=8)
+                    if res.status_code == 200:
+                        data = res.json()
+                        for stream in data.get('videoStreams', []):
+                            if not stream.get('videoOnly'):
+                                stream_url = stream.get('url')
+                                if stream.get('quality') == '720p':
+                                    break
+                        if stream_url:
+                            break # Found working stream!
+                except:
+                    continue # Try next instance if current one fails
+                    
+            if stream_url:
+                return jsonify({'status': 'success', 'stream_url': stream_url})
+            else:
+                return jsonify({'status': 'failed', 'message': 'All raw stream servers failed.'}), 404
 
         # Load / Read Handlers
         elif action == 'subscriptions':
