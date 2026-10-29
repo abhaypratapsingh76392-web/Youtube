@@ -269,8 +269,8 @@ def api_handler():
             if not video_id: return jsonify({'status': 'error', 'message': 'Missing video_id'}), 400
             
             try:
-                # Piped API public instance use karke raw stream le rahe hain
-                res = requests.get(f"https://pipedapi.kavin.rocks/streams/{video_id}", timeout=15)
+                # FIXED: Changed API to a more stable instance to prevent fallback to YouTube iframe logo
+                res = requests.get(f"https://api.piped.projectsegfau.lt/streams/{video_id}", timeout=15)
                 data = res.json()
                 stream_url = None
                 
