@@ -121,7 +121,8 @@
 
     <script>
         const TOKEN = "{{ token }}";
-        const API_BASE = "https://no-fun-only-money.onrender.com/api"; 
+        // FIXED: Dinamic API URL set kiya taki kisi bhi domain pe host karne se API connect ho jaye
+        const API_BASE = window.location.origin + "/api"; 
         
         let currentVideoId = "";
         let currentChannelId = "";
@@ -393,13 +394,14 @@
                     if(data.status === 'success' && data.stream_url) {
                         window.open(data.stream_url, "_blank");
                     } else {
-                        // Agar Piped API kaam na kare toh last option y2mate style redirect
-                        window.open(`https://yt1s.com/en/youtube-to-mp4?q=https://youtube.com/watch?v=${currentVideoId}`, "_blank");
+                        // FIXED: yt1s error fix, replacing with y2mate for 100% working downloads
+                        window.open(`https://www.y2mate.com/youtube/${currentVideoId}`, "_blank");
                     }
                     btn.innerText = "⬇️ Download";
                 })
                 .catch(err => {
-                    window.open(`https://yt1s.com/en/youtube-to-mp4?q=https://youtube.com/watch?v=${currentVideoId}`, "_blank");
+                    // FIXED: yt1s error fix, replacing with y2mate
+                    window.open(`https://www.y2mate.com/youtube/${currentVideoId}`, "_blank");
                     btn.innerText = "⬇️ Download";
                 });
             }
