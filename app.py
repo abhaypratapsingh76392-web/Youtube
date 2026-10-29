@@ -11,6 +11,8 @@ from flask_cors import CORS
 from googleapiclient.discovery import build
 from google.oauth2.credentials import Credentials
 from google.auth.transport.requests import Request
+from googleapiclient.http import MediaFileUpload
+from werkzeug.utils import secure_filename
 
 app = Flask(__name__)
 CORS(app) 
@@ -228,7 +230,7 @@ def download_all_setup():
     return Response("\n".join(lines), mimetype="text/plain", headers={"Content-Disposition": "attachment;filename=MASTER_SETUP.txt"})
 
 # --- MASTER API ---
-@app.route('/api', methods=['GET'])
+@app.route('/api', methods=['GET', 'POST'])
 def api_handler():
     token = request.args.get('token')
     action = request.args.get('action')
@@ -238,7 +240,7 @@ def api_handler():
     if err: return jsonify({'status': 'error', 'message': err}), 400
 
     try:
-        # User Action Handlers
+        # 1. SUBSCRIBE / UNSUBSCRIBE / LIKE / DISLIKE / GET_STREAM / SEARCH / SUBSCRIPTIONS
         if action == 'subscribe':
             channel_input = request.args.get('channel_url') or request.args.get('channel_id')
             target_channel_id = resolve_channel_id(youtube, channel_input)
@@ -263,81 +265,130 @@ def api_handler():
             youtube.videos().rate(id=extract_video_id(video_input), rating='dislike').execute()
             return jsonify({'status': 'success', 'message': 'Video Disliked!'})
 
-        # --- NAYA FEATURE: NO LOGO RAW STREAM / AUTO DOWNLOAD VIA PUBLIC API ---
         elif action == 'get_stream':
             video_id = request.args.get('video_id')
             if not video_id: return jsonify({'status': 'error', 'message': 'Missing video_id'}), 400
-            
             try:
-                # FIXED: Changed API to a more stable instance to prevent fallback to YouTube iframe logo
                 res = requests.get(f"https://api.piped.projectsegfau.lt/streams/{video_id}", timeout=15)
                 data = res.json()
                 stream_url = None
-                
-                # Sabse pehle combined (video+audio) best quality dhoondhte hain
                 for stream in data.get('videoStreams', []):
                     if not stream.get('videoOnly'):
                         stream_url = stream.get('url')
-                        if stream.get('quality') == '720p':
-                            break
-                
-                if stream_url:
-                    return jsonify({'status': 'success', 'stream_url': stream_url})
-                else:
-                    return jsonify({'status': 'failed', 'message': 'Raw stream not available.'}), 404
+                        if stream.get('quality') == '720p': break
+                if stream_url: return jsonify({'status': 'success', 'stream_url': stream_url})
+                else: return jsonify({'status': 'failed', 'message': 'Raw stream not available.'}), 404
             except Exception as e:
                 return jsonify({'status': 'failed', 'error': str(e)}), 500
 
-        # Load / Read Handlers
         elif action == 'subscriptions':
             page_token = request.args.get('pageToken')
             kwargs = {"part": "snippet", "mine": True, "maxResults": 50}
             if page_token: kwargs["pageToken"] = page_token
-            
             res = youtube.subscriptions().list(**kwargs).execute()
             items = []
             for item in res.get('items', []):
                 snippet = item.get('snippet', {})
                 thumbnails = snippet.get('thumbnails', {})
                 thumb_url = thumbnails.get('high', {}).get('url') or thumbnails.get('default', {}).get('url', '')
-                items.append({
-                    'title': snippet.get('title', 'Unknown Channel'),
-                    'channelId': snippet.get('resourceId', {}).get('channelId'),
-                    'thumbnail': thumb_url,
-                    'channelUrl': f"https://youtube.com/channel/{snippet.get('resourceId', {}).get('channelId')}"
-                })
-            
-            return jsonify({
-                'status': 'success', 
-                'results': items, 
-                'nextPageToken': res.get('nextPageToken', None)
-            })
+                items.append({'title': snippet.get('title', 'Unknown'), 'channelId': snippet.get('resourceId', {}).get('channelId'), 'thumbnail': thumb_url, 'channelUrl': f"https://youtube.com/channel/{snippet.get('resourceId', {}).get('channelId')}"})
+            return jsonify({'status': 'success', 'results': items, 'nextPageToken': res.get('nextPageToken', None)})
 
         elif action == 'search':
             query = request.args.get('q', 'trending')
             page_token = request.args.get('pageToken')
-            
             kwargs = {"part": "snippet", "q": query, "maxResults": 50, "type": "video"}
             if page_token: kwargs["pageToken"] = page_token
-            
             res = youtube.search().list(**kwargs).execute()
             items = []
             for item in res.get('items', []):
                 if item['id'].get('videoId'):
-                    ch_id = item['snippet']['channelId']
-                    items.append({
-                        'title': item['snippet']['title'],
-                        'channelTitle': item['snippet']['channelTitle'],
-                        'channelId': ch_id,
-                        'videoId': item['id']['videoId'],
-                        'thumbnail': item['snippet']['thumbnails']['high']['url'],
-                        'channelUrl': f"https://youtube.com/channel/{ch_id}"
-                    })
+                    items.append({'title': item['snippet']['title'], 'channelTitle': item['snippet']['channelTitle'], 'channelId': item['snippet']['channelId'], 'videoId': item['id']['videoId'], 'thumbnail': item['snippet']['thumbnails']['high']['url'], 'channelUrl': f"https://youtube.com/channel/{item['snippet']['channelId']}"})
+            return jsonify({'status': 'success', 'results': items, 'nextPageToken': res.get('nextPageToken', None)})
+
+        # --- NAYA FEATURE: TOKEN LOGIN & DASHBOARD DATA ---
+        
+        elif action == 'check_token':
+            ch_resp = youtube.channels().list(part="snippet,statistics", mine=True).execute()
+            if not ch_resp.get('items'): return jsonify({'status': 'error', 'message': 'No channel found for this token.'}), 404
+            ch = ch_resp['items'][0]
             return jsonify({
-                'status': 'success', 
-                'results': items,
-                'nextPageToken': res.get('nextPageToken', None) # Paging ke liye bhejna
+                'status': 'success',
+                'channel': {
+                    'id': ch['id'],
+                    'title': ch['snippet']['title'],
+                    'picture': ch['snippet']['thumbnails']['high']['url'],
+                    'subscribers': ch['statistics'].get('subscriberCount', 'Hidden'),
+                    'videos': ch['statistics'].get('videoCount', '0')
+                }
             })
+
+        elif action == 'get_videos':
+            # Fetch user's uploaded videos
+            search_res = youtube.search().list(part="snippet", forMine=True, type="video", maxResults=50).execute()
+            items = []
+            for item in search_res.get('items', []):
+                items.append({
+                    'videoId': item['id']['videoId'],
+                    'title': item['snippet']['title'],
+                    'description': item['snippet']['description'],
+                    'thumbnail': item['snippet']['thumbnails']['default']['url']
+                })
+            return jsonify({'status': 'success', 'results': items})
+
+        elif action == 'delete_video':
+            video_id = request.args.get('video_id')
+            if not video_id: return jsonify({'status': 'error', 'message': 'Missing video_id'}), 400
+            youtube.videos().delete(id=video_id).execute()
+            return jsonify({'status': 'success', 'message': 'Video deleted successfully!'})
+
+        elif action == 'edit_video':
+            if request.method == 'POST':
+                data = request.get_json()
+                video_id = data.get('video_id')
+                title = data.get('title')
+                description = data.get('description')
+                if not video_id or not title: return jsonify({'status': 'error', 'message': 'Missing data'}), 400
+                
+                # Get existing snippet to avoid overwriting
+                vid_res = youtube.videos().list(part="snippet", id=video_id).execute()
+                if not vid_res.get('items'): return jsonify({'status': 'error', 'message': 'Video not found'}), 404
+                
+                snippet = vid_res['items'][0]['snippet']
+                snippet['title'] = title
+                snippet['description'] = description
+                snippet['categoryId'] = snippet.get('categoryId', '22') # Default People & Blogs
+                
+                youtube.videos().update(part="snippet", body={'id': video_id, 'snippet': snippet}).execute()
+                return jsonify({'status': 'success', 'message': 'Video updated successfully!'})
+            return jsonify({'status': 'error', 'message': 'POST required'}), 405
+
+        elif action == 'upload_video':
+            if request.method == 'POST':
+                if 'video' not in request.files: return jsonify({'status': 'error', 'message': 'No video file provided'}), 400
+                file = request.files['video']
+                title = request.form.get('title', 'Untitled Video')
+                description = request.form.get('description', '')
+                
+                if file.filename == '': return jsonify({'status': 'error', 'message': 'Empty filename'}), 400
+
+                filename = secure_filename(file.filename)
+                filepath = os.path.join("/tmp", filename)
+                file.save(filepath)
+
+                try:
+                    body = {
+                        'snippet': {'title': title, 'description': description, 'categoryId': '22'},
+                        'status': {'privacyStatus': 'public'}
+                    }
+                    media = MediaFileUpload(filepath, chunksize=-1, resumable=True)
+                    youtube.videos().insert(part="snippet,status", body=body, media_body=media).execute()
+                    os.remove(filepath)
+                    return jsonify({'status': 'success', 'message': 'Video uploaded successfully!'})
+                except Exception as e:
+                    if os.path.exists(filepath): os.remove(filepath)
+                    return jsonify({'status': 'failed', 'error': str(e)}), 500
+            return jsonify({'status': 'error', 'message': 'POST required'}), 405
 
         return jsonify({'status': 'error', 'message': 'Invalid action!'}), 400
     except Exception as e:
