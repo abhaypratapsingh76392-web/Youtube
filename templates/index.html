@@ -121,7 +121,6 @@
 
     <script>
         const TOKEN = "{{ token }}";
-        // FIXED: Dinamic API URL set kiya taki kisi bhi domain pe host karne se API connect ho jaye
         const API_BASE = window.location.origin + "/api"; 
         
         let currentVideoId = "";
@@ -279,31 +278,52 @@
             nowPlaying.innerText = title;
             playerSection.style.display = 'block';
             
-            // Sabse pehle loader dikhayein, YouTube ka logo hataane ke liye native player setup karein
             iframe.style.display = 'none';
             nativeVideo.style.display = 'none';
             nativeVideo.src = "";
             loader.style.display = 'block';
             window.currentDownloadUrl = null;
             
-            // Piped Public API backend route se raw MP4 fetch karein
-            fetch(`${API_BASE}?token=${TOKEN}&action=get_stream&video_id=${videoId}`)
-            .then(res => res.json())
-            .then(data => {
+            // FIXED: YouTube Server IP-Lock block hatane ke liye frontend mein 4 servers lagaye hain.
+            const instances = [
+                "https://pipedapi.kavin.rocks",
+                "https://pipedapi.tokhmi.xyz",
+                "https://pipedapi.smnz.de",
+                "https://piped-api.garudalinux.org"
+            ];
+            
+            async function getRawStreamUrl() {
+                for (let url of instances) {
+                    try {
+                        let res = await fetch(`${url}/streams/${videoId}`);
+                        if (!res.ok) continue;
+                        let data = await res.json();
+                        let streamUrl = null;
+                        for (let stream of (data.videoStreams || [])) {
+                            if (!stream.videoOnly) {
+                                streamUrl = stream.url;
+                                if (stream.quality === '720p') break;
+                            }
+                        }
+                        if (streamUrl) return streamUrl;
+                    } catch(e) {
+                        console.log("Failed instance: " + url);
+                    }
+                }
+                return null;
+            }
+
+            // Execute logic
+            getRawStreamUrl().then(stream_url => {
                 loader.style.display = 'none';
-                if(data.status === 'success' && data.stream_url) {
-                    // Yahan YouTube ka koi UI/Logo nahi aayega (Vidmate style)
-                    nativeVideo.src = data.stream_url;
+                if(stream_url) {
+                    nativeVideo.src = stream_url;
                     nativeVideo.style.display = 'block';
                     nativeVideo.play();
-                    window.currentDownloadUrl = data.stream_url; // Direct download ke liye
+                    window.currentDownloadUrl = stream_url; 
                 } else {
                     fallbackToIframe(videoId);
                 }
-            })
-            .catch(err => {
-                loader.style.display = 'none';
-                fallbackToIframe(videoId);
             });
             
             playerSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -314,7 +334,6 @@
             const nativeVideo = document.getElementById('nativeVideo');
             nativeVideo.style.display = 'none';
             iframe.style.display = 'block';
-            // modestbranding se logo chiphta hai but full remove nahi hota, isiliye ye fallback hai
             iframe.src = `https://www.youtube.com/embed/${videoId}?autoplay=1&modestbranding=1&rel=0&iv_load_policy=3`;
             window.currentDownloadUrl = null;
         }
@@ -371,14 +390,14 @@
             window.open(`https://youtube.com/channel/${currentChannelId}`, "_blank");
         }
 
-        // Direct Download & API Download System
+        // FIXED: Direct Download Fix, if y2mate is blocked in India
         function downloadVideo() {
             if(!currentVideoId) return;
             const btn = document.getElementById('downloadBtn');
             btn.innerText = "⏳ Fetching...";
             
             if (window.currentDownloadUrl) {
-                // Raw link already fetched (Direct Download - Fast)
+                // Background me stream load ho chuka hai toh direct instant download window.
                 let a = document.createElement('a');
                 a.href = window.currentDownloadUrl;
                 a.target = "_blank";
@@ -387,23 +406,9 @@
                 document.body.removeChild(a);
                 btn.innerText = "⬇️ Download";
             } else {
-                // Agar native stream fail ho gaya tha, toh Public Backend route par hit karo
-                fetch(`${API_BASE}?token=${TOKEN}&action=get_stream&video_id=${currentVideoId}`)
-                .then(res => res.json())
-                .then(data => {
-                    if(data.status === 'success' && data.stream_url) {
-                        window.open(data.stream_url, "_blank");
-                    } else {
-                        // FIXED: yt1s error fix, replacing with y2mate for 100% working downloads
-                        window.open(`https://www.y2mate.com/youtube/${currentVideoId}`, "_blank");
-                    }
-                    btn.innerText = "⬇️ Download";
-                })
-                .catch(err => {
-                    // FIXED: yt1s error fix, replacing with y2mate
-                    window.open(`https://www.y2mate.com/youtube/${currentVideoId}`, "_blank");
-                    btn.innerText = "⬇️ Download";
-                });
+                // Agar y2mate Jio/Airtel par block hai toh unblocked proxy open karega (ssyoutube universal)
+                window.open(`https://www.ssyoutube.com/watch?v=${currentVideoId}`, "_blank");
+                btn.innerText = "⬇️ Download";
             }
         }
     </script>
