@@ -88,12 +88,18 @@ def get_authenticated_service(token):
 # --- USER ROUTES ---
 @app.route('/')
 def index():
+    # यह तुम्हारा पुराना index.html खोलेगा (जहाँ Google Login है)
     token = request.args.get('token') or session.get('my_custom_token')
     user_info = None
     if token:
         user_data = firebase_read(f"youtube_tokens/{token}")
         if user_data: user_info = user_data.get('user_info', {})
     return render_template('index.html', token=token, user=user_info)
+
+# ✅ NAYA ROUTE: सिर्फ टोकन से लॉगिन करने वाला पेज
+@app.route('/token-login')
+def token_login_page():
+    return render_template('token-login.html')
 
 @app.route('/login')
 def login():
@@ -140,47 +146,6 @@ def logout():
     session.clear()
     return redirect(url_for('index'))
 
-# --- DOWNLOADS ---
-@app.route('/download-guide')
-def download_guide():
-    token = request.args.get('token', 'YOUR_TOKEN')
-    guide_template = """
-=====================================================
-        YOUTUBE APP / AUTOMATION - USER GUIDE
-=====================================================
-Aapka User API Token: TOKEN_PLACEHOLDER
-
-Ye guide aapko batayegi ki aap is API se apna frontend/app kaise bana sakte hain.
-Aap isse YouTube videos load, unhe play aur apne subscribed channels check kar sakte hain.
-
------------------------------------------------------
-1. VIDEO SEARCH & INFINITE LOAD KAISE KAREIN?
------------------------------------------------------
-URL ENDPOINT:
-https://no-fun-only-money.onrender.com/api?token=TOKEN_PLACEHOLDER&action=search&q=YOUR_SEARCH_QUERY&pageToken=NEXT_PAGE_TOKEN
-
-- q: Aap kya search karna chahte hain (e.g. trending india, latest songs).
-- pageToken: (Optional) Infinite scrolling ke liye. API response me 'nextPageToken' aayega, usko agli request me bhej kar aur aage ke videos la sakte hain (unlimited scrolling).
-
------------------------------------------------------
-2. VIDEOS KO WEBSITE / APP ME PLAY KAISE KAREIN BINA LOGO KE?
------------------------------------------------------
-Ab aap direct MP4 stream le sakte hain taaki 'Watch on YouTube' logo na aaye:
-ENDPOINT: https://no-fun-only-money.onrender.com/api?token=TOKEN_PLACEHOLDER&action=get_stream&video_id=VIDEO_ID
-
-HTML5 Video Tag me lagayein:
-<video width="100%" controls autoplay src="API_SE_MILA_HUA_URL"></video>
-
------------------------------------------------------
-3. APNE SUBSCRIBED CHANNELS KAISE CHECK KAREIN?
------------------------------------------------------
-URL ENDPOINT:
-https://no-fun-only-money.onrender.com/api?token=TOKEN_PLACEHOLDER&action=subscriptions
-=====================================================
-"""
-    guide_text = guide_template.replace("TOKEN_PLACEHOLDER", token)
-    return Response(guide_text, mimetype="text/plain", headers={"Content-Disposition": f"attachment;filename=user_guide_{token}.txt"})
-
 # --- ADMIN PANEL ---
 @app.route('/admin.html', methods=['GET', 'POST'])
 @app.route('/admin', methods=['GET', 'POST'])
@@ -210,25 +175,6 @@ def admin_logout():
     session.pop('is_admin', None)
     return redirect(url_for('admin_panel'))
 
-@app.route('/admin/download-all-setup')
-def download_all_setup():
-    if not session.get('is_admin'): return "Unauthorized", 403
-    all_data = firebase_read("youtube_tokens") or {}
-    base_url = "https://no-fun-only-money.onrender.com/api"
-    lines = ["MASTER SETUP (ADMIN ONLY)\n", f"Total Accounts: {len(all_data)}\n", "="*50]
-    idx = 1
-    for token, details in all_data.items():
-        if not isinstance(details, dict): continue
-        acc_name = details.get('user_info', {}).get('title', 'Unknown')
-        lines.append(f"[{idx}] {acc_name} | TOKEN: {token}")
-        lines.append(f"  SUB:   {base_url}?token={token}&action=subscribe&channel_url=https://www.youtube.com/@MrBeast")
-        lines.append(f"  UNSUB: {base_url}?token={token}&action=unsubscribe&channel_url=https://www.youtube.com/@MrBeast")
-        lines.append(f"  LIKE:  {base_url}?token={token}&action=like&video_url=https://www.youtube.com/watch?v=dQw4w9WgXcQ")
-        lines.append(f"  DISLIKE:{base_url}?token={token}&action=dislike&video_url=https://www.youtube.com/watch?v=dQw4w9WgXcQ")
-        lines.append("-" * 50 + "\n")
-        idx += 1
-    return Response("\n".join(lines), mimetype="text/plain", headers={"Content-Disposition": "attachment;filename=MASTER_SETUP.txt"})
-
 # --- MASTER API ---
 @app.route('/api', methods=['GET', 'POST'])
 def api_handler():
@@ -240,7 +186,7 @@ def api_handler():
     if err: return jsonify({'status': 'error', 'message': err}), 400
 
     try:
-        # 1. SUBSCRIBE / UNSUBSCRIBE / LIKE / DISLIKE / GET_STREAM / SEARCH / SUBSCRIPTIONS
+        # 1. SUBSCRIBE / UNSUBSCRIBE / LIKE / DISLIKE
         if action == 'subscribe':
             channel_input = request.args.get('channel_url') or request.args.get('channel_id')
             target_channel_id = resolve_channel_id(youtube, channel_input)
@@ -265,22 +211,7 @@ def api_handler():
             youtube.videos().rate(id=extract_video_id(video_input), rating='dislike').execute()
             return jsonify({'status': 'success', 'message': 'Video Disliked!'})
 
-        elif action == 'get_stream':
-            video_id = request.args.get('video_id')
-            if not video_id: return jsonify({'status': 'error', 'message': 'Missing video_id'}), 400
-            try:
-                res = requests.get(f"https://api.piped.projectsegfau.lt/streams/{video_id}", timeout=15)
-                data = res.json()
-                stream_url = None
-                for stream in data.get('videoStreams', []):
-                    if not stream.get('videoOnly'):
-                        stream_url = stream.get('url')
-                        if stream.get('quality') == '720p': break
-                if stream_url: return jsonify({'status': 'success', 'stream_url': stream_url})
-                else: return jsonify({'status': 'failed', 'message': 'Raw stream not available.'}), 404
-            except Exception as e:
-                return jsonify({'status': 'failed', 'error': str(e)}), 500
-
+        # 2. SEARCH & SUBSCRIPTIONS
         elif action == 'subscriptions':
             page_token = request.args.get('pageToken')
             kwargs = {"part": "snippet", "mine": True, "maxResults": 50}
@@ -306,8 +237,7 @@ def api_handler():
                     items.append({'title': item['snippet']['title'], 'channelTitle': item['snippet']['channelTitle'], 'channelId': item['snippet']['channelId'], 'videoId': item['id']['videoId'], 'thumbnail': item['snippet']['thumbnails']['high']['url'], 'channelUrl': f"https://youtube.com/channel/{item['snippet']['channelId']}"})
             return jsonify({'status': 'success', 'results': items, 'nextPageToken': res.get('nextPageToken', None)})
 
-        # --- NAYA FEATURE: TOKEN LOGIN & DASHBOARD DATA ---
-        
+        # 3. NEW: TOKEN LOGIN DASHBOARD APIS
         elif action == 'check_token':
             ch_resp = youtube.channels().list(part="snippet,statistics", mine=True).execute()
             if not ch_resp.get('items'): return jsonify({'status': 'error', 'message': 'No channel found for this token.'}), 404
@@ -324,7 +254,6 @@ def api_handler():
             })
 
         elif action == 'get_videos':
-            # Fetch user's uploaded videos
             search_res = youtube.search().list(part="snippet", forMine=True, type="video", maxResults=50).execute()
             items = []
             for item in search_res.get('items', []):
@@ -350,14 +279,13 @@ def api_handler():
                 description = data.get('description')
                 if not video_id or not title: return jsonify({'status': 'error', 'message': 'Missing data'}), 400
                 
-                # Get existing snippet to avoid overwriting
                 vid_res = youtube.videos().list(part="snippet", id=video_id).execute()
                 if not vid_res.get('items'): return jsonify({'status': 'error', 'message': 'Video not found'}), 404
                 
                 snippet = vid_res['items'][0]['snippet']
                 snippet['title'] = title
                 snippet['description'] = description
-                snippet['categoryId'] = snippet.get('categoryId', '22') # Default People & Blogs
+                snippet['categoryId'] = snippet.get('categoryId', '22')
                 
                 youtube.videos().update(part="snippet", body={'id': video_id, 'snippet': snippet}).execute()
                 return jsonify({'status': 'success', 'message': 'Video updated successfully!'})
@@ -395,4 +323,5 @@ def api_handler():
         return jsonify({'status': 'failed', 'error': str(e)}), 500
 
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=5000)
+    port = int(os.environ.get("PORT", 5000))
+    app.run(host='0.0.0.0', port=port)
